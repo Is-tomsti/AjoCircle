@@ -10,6 +10,24 @@ This folder contains an isolated Rust validation core, a Node.js 1Click status c
 - It compares those fields against a trusted server-side pending-quote record and enforces the configured minimum output amount using integer base units (`BigInt`).
 - Unit tests mock the HTTP response; they do not make live API requests or prove live credentials work.
 
+## Server-side verification workflow
+
+settlement-service.mjs exports verifyPendingIntentDelivery({ store, statusClient, intentId }). The caller supplies only the intent ID; the service loads the deposit address and expected delivery fields from the trusted database record, asks the configured status client for the 1Click status, and atomically records verified delivery. It refuses missing or already-consumed intents. Do not expose the raw store or allow a browser to choose circle/member/round/recipient/amount fields.
+
+Example (server-side only):
+
+```js
+import { SettlementStore } from './settlement-store.mjs';
+import { OneClickStatusClient } from './oneclick.mjs';
+import { verifyPendingIntentDelivery } from './settlement-service.mjs';
+
+const store = new SettlementStore({ path: 'data/settlement.sqlite' });
+const statusClient = new OneClickStatusClient({ bearerToken: process.env.ONECLICK_API_KEY });
+const result = await verifyPendingIntentDelivery({ store, statusClient, intentId });
+```
+
+This example assumes intentId was created earlier from a trusted quote flow. Keep the credential in server environment configuration; never ship it to a browser. The service is a callable module, not an HTTP server or production API endpoint.
+
 ## Critical limits
 
 - The API client is implemented but has not yet been exercised against the live 1Click service; there is no production service integration or end-to-end payment flow.
@@ -30,7 +48,7 @@ The test suite uses temporary SQLite files and mocked status payloads. It does n
 ## Run tests
 
 ```powershell
-node --test settlement-adapter\oneclick.test.mjs settlement-adapter\settlement-store.test.mjs
+node --test settlement-adapter/oneclick.test.mjs settlement-adapter/settlement-store.test.mjs settlement-adapter/settlement-service.test.mjs
 cargo test --manifest-path settlement-adapter\Cargo.toml --offline
 ```
 
