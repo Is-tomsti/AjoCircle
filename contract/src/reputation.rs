@@ -23,8 +23,8 @@ pub fn trust_score(record: ReputationRecord) -> u16 {
     if total == 0 {
         return 500;
     }
-    let weighted = u64::from(record.on_time_contributions) * 2
-        + u64::from(record.late_contributions);
+    let weighted =
+        u64::from(record.on_time_contributions) * 2 + u64::from(record.late_contributions);
     ((weighted * 500) / total).min(1_000) as u16
 }
 
@@ -74,7 +74,13 @@ mod tests {
 
     #[test]
     fn perfect_record_scores_one_thousand() {
-        assert_eq!(trust_score(ReputationRecord { on_time_contributions: 10, ..Default::default() }), 1_000);
+        assert_eq!(
+            trust_score(ReputationRecord {
+                on_time_contributions: 10,
+                ..Default::default()
+            }),
+            1_000
+        );
     }
 
     #[test]
@@ -91,8 +97,14 @@ mod tests {
             ..Default::default()
         };
         assert!(rules.allows(good));
-        assert!(!rules.allows(ReputationRecord { confirmed_defaults: 1, ..good }));
-        assert!(!rules.allows(ReputationRecord { completed_circles: 1, ..good }));
+        assert!(!rules.allows(ReputationRecord {
+            confirmed_defaults: 1,
+            ..good
+        }));
+        assert!(!rules.allows(ReputationRecord {
+            completed_circles: 1,
+            ..good
+        }));
     }
 
     #[test]
@@ -101,6 +113,8 @@ mod tests {
             minimum_score: 1_001,
             minimum_completed_circles: 0,
             maximum_confirmed_defaults: 0,
-        }.validate().is_err());
+        }
+        .validate()
+        .is_err());
     }
 }
