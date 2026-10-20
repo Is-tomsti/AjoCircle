@@ -13,6 +13,14 @@ function sendJson(response, statusCode, body) {
 
 async function readJsonBody(request) {
   if (request.body && typeof request.body === 'object' && !Buffer.isBuffer(request.body)) {
+    // Framework-parsed bodies no longer expose their original byte stream, so
+    // enforce a conservative serialized-size limit at this module boundary too.
+    let serialized;
+    try { serialized = JSON.stringify(request.body); }
+    catch { throw Object.assign(new Error('Invalid parsed body'), { code: 'INVALID_JSON' }); }
+    if (Buffer.byteLength(serialized ?? '', 'utf8') > MAX_BODY_BYTES) {
+      throw Object.assign(new Error('Body too large'), { code: 'BODY_TOO_LARGE' });
+    }
     return request.body;
   }
   let raw = '';

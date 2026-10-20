@@ -91,3 +91,68 @@ test('requires real authentication, member identity, and trusted context callbac
   assert.throws(() => createMemberQuoteHandler({ store }), /quote client is required/);
   store.close();
 });
+
+
+test('requires each authentication and trusted resolver dependency explicitly', () => {
+  const store = new SettlementStore();
+  const base = {
+    store, quoteClient: { async getQuote() { throw new Error('must not be called'); } },
+    authenticateRequest: async () => ({ subject: 'session-user-1' }),
+    resolveMemberIdentity: async () => 'member-from-db',
+    resolveTrustedContext: async () => trusted,
+  };
+  assert.throws(() => createMemberQuoteHandler({ ...base, authenticateRequest: undefined }), /authentication callback/);
+  assert.throws(() => createMemberQuoteHandler({ ...base, resolveMemberIdentity: undefined }), /identity resolver/);
+  assert.throws(() => createMemberQuoteHandler({ ...base, resolveTrustedContext: undefined }), /context resolver/);
+  store.close();
+});
+
+test('rejects oversized framework-parsed body before quote creation', async () => {
+  const ctx = setup(); const res = response();
+  await ctx.handler(request({ ...validBody, padding: 'x'.repeat(17 * 1024) }), res);
+  assert.equal(res.statusCode, 413);
+  assert.equal(res.body.error, 'BODY_TOO_LARGE');
+  assert.equal(ctx.calls.quote, 0);
+  ctx.store.close();
+});
+
+test('rejects malformed JSON and non-object JSON bodies safely', async () => {
+  const ctx = setup();
+  let res = response();
+  await ctx.handler(request(null, { async *[Symbol.asyncIterator]() { yield '{invalid'; } }), res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.error, 'INVALID_JSON');
+  res = response();
+  await ctx.handler(request(null, { async *[Symbol.asyncIterator]() { yield '[]'; } }), res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.error, 'INVALID_BODY');
+  assert.equal(ctx.calls.quote, 0);
+  ctx.store.close();
+});
+
+test('rejects inactive trusted circle/member/round and resolver identity mismatch without persistence', async () => {
+  for (const override of [
+    { circleStatus: 'INACTIVE' },
+    { memberStatus: 'SUSPENDED' },
+    { roundStatus: 'CLOSED' },
+    { memberId: 'different-member' },
+  ]) {
+    const ctx = setup({ resolveTrustedContext: async ids => ({ ...trusted, ...ids, ...override }) });
+    const res = response();
+    await ctx.handler(request(), res);
+    assert.equal(res.statusCode, override.memberId ? 403 : 422);
+    assert.equal(ctx.store.getIntent('intent-api-1'), null);
+    assert.equal(ctx.calls.quote, 0);
+    ctx.store.close();
+  }
+});
+
+test('rejects invalid slippage and deposit mode without persisting an intent', async () => {
+  for (const extra of [{ slippageTolerance: -1 }, { depositMode: 'UNSAFE_MODE' }]) {
+    const ctx = setup(); const res = response();
+    await ctx.handler(request({ ...validBody, ...extra }), res);
+    assert.equal(res.statusCode, 422);
+    assert.equal(ctx.store.getIntent('intent-api-1'), null);
+    ctx.store.close();
+  }
+});

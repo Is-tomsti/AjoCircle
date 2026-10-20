@@ -110,3 +110,12 @@ The RPC adapter is covered by mocked JSON-RPC tests only. No live RPC call, cont
 The authorization callback is deliberately mandatory: connect it to the application's real authentication/session and authoritative circle membership/permissions before mounting the handler. This repository currently has no application auth system, trusted member-context resolver, or HTTP server, so the handler is an integration component rather than a live endpoint. Do not substitute a browser-supplied member ID for verified identity.
 
 Tests mock the request/response and contract client. They verify authorization gates contract reads, expected HTTP responses, and safe error handling; no server or live RPC endpoint was started.
+
+
+## Authenticated member quote handler (integration module)
+
+`member-quote-handler.mjs` exports `createMemberQuoteHandler(...)`, a framework-free handler for `POST /api/member/quote`. It requires explicit `authenticateRequest`, `resolveMemberIdentity`, and `resolveTrustedContext` callbacks, plus the trusted settlement store and configured 1Click quote client. The member identity and refund address are derived server-side; caller-supplied `memberId` and `refundTo` fields are rejected. It validates the route, method, request fields, JSON body size, trusted circle/member/round identity, and registered refund wallet, then delegates quote validation and persistence to `createTrustedMemberQuote(...)`. Responses use `no-store` and `nosniff` headers and avoid returning internal exception details.
+
+This module is **not a running server and does not integrate real authentication or an authoritative database**. Its callbacks must be connected to the application's actual session verifier and trusted membership records before mounting. For already framework-parsed bodies, this handler applies a serialized-size check, but the production framework must also enforce a raw request-body limit before parsing. Add rate limiting, secure server-side diagnostics, and endpoint-level integration tests as part of server integration.
+
+The member quote handler tests use local request/response doubles and mocked quote-client/context callbacks. They do not prove live 1Click credentials, live RPC, real authentication, or real-funds behavior. Run the complete Node suite with `node --test settlement-adapter\\*.test.mjs` and the Rust suites separately; never treat quote creation or swap delivery as a confirmed native-NEAR contract contribution.
