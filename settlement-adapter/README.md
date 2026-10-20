@@ -55,3 +55,9 @@ cargo test --manifest-path settlement-adapter\Cargo.toml --offline
 ## Before production
 
 Implement and review a real settlement-source adapter; persist pending intents and replay protection transactionally; define supported chains/assets and finality policies; authenticate the server API; add end-to-end tests against a test environment; and obtain an independent security review. Do not use for real funds.
+
+## Member-mediated quote request builder
+
+`quote-request.mjs` constructs a validated 1Click exact-input request that targets the member's NEAR account and requests `nep141:wrap.near`. It validates base-unit amounts, recipient/refund fields, slippage bounds, and deposit mode. Its tests are local unit tests only; it does not call the 1Click API, store a quote, or mark a circle contribution complete.
+
+This is the first integration step for the member-mediated MVP. A quote must be generated from trusted server-side circle/member state, and a delivered wrapped-NEAR swap must still be followed by the member's native-NEAR `contribute()` call under the current contract.
