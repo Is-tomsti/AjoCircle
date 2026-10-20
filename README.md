@@ -15,15 +15,17 @@ Ajo Circle is under active development. The current contract is an initial proto
 - Create a circle with a fixed member list, contribution amount, payout order, deadline, and treasurer account.
 - Accept one exact-size NEAR deposit from each member per round before the deadline.
 - Support `Private` and `ProtectedPublic` circle modes.
-- In `ProtectedPublic` mode, require a separately tracked protection balance at least equal to the full scheduled pot before a payout can start. Protection deposits cannot be counted as member contributions.
+- In `ProtectedPublic` mode, track protection funds separately from member contributions.
+- Permit a protected public payout to cover missing contributions only after the deadline and only when the reserve covers the exact shortfall; otherwise the payout pauses.
+- Reserve the shortfall while a payout is pending, keep the deduction after success, and restore it if the transfer callback reports failure.
 - Restrict payout initiation and round advancement to the configured treasurer account.
 - Mark a payout complete only after its transfer callback reports success.
-- Expose basic round, contribution, mode, and protection-balance views.
+- Expose round, contribution, mode, current shortfall requirement, protection balance, and pending reserve-use views.
 
 ### Planned work
 
-1. Contract test suite and reproducible WASM release build are passing locally.
-2. Complete the protection design: define verified shortfall claims, reserve usage/replenishment, and safe deposit release; test defaults, failed transfers, and round transitions.
+1. Contract tests currently pass locally; re-run the WASM release build after each contract change.
+2. Add a safe protection-deposit release policy, terminal-circle handling, and explicit reserve replenishment rules; expand adversarial tests for round transitions and accounting invariants.
 3. Design the NEAR Intents settlement adapter so a cross-chain contribution is credited only after settlement is independently verified.
 4. Persist verified reputation events on-chain and connect the deterministic scoring rules to those events.
 5. Add the treasurer agent with narrowly scoped permissions and auditable decisions, then build the member dashboard and deployment scenarios.

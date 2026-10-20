@@ -46,6 +46,7 @@ pub struct Circle {
     treasurer_agent: AccountId,
     mode: CircleMode,
     protection_balance: u128,
+    pending_protection_used: u128,
     payout_pending: bool,
     payout_complete: bool,
 }
@@ -100,6 +101,7 @@ impl Circle {
             treasurer_agent,
             mode,
             protection_balance: 0,
+            pending_protection_used: 0,
             payout_pending: false,
             payout_complete: false,
         }
@@ -155,11 +157,32 @@ impl Circle {
             !self.payout_pending && !self.payout_complete,
             "Payout is already pending or complete"
         );
-        assert_eq!(
-            self.contribution_count_internal(),
-            self.members.len(),
-            "Every member must contribute before payout in Stage 1"
-        );
+        let contributed_count = self.contribution_count_internal();
+        let missing_count = self.members.len() - contributed_count;
+        if self.mode == CircleMode::Private {
+            assert_eq!(
+                missing_count, 0,
+                "Every member must contribute before payout in Stage 1"
+            );
+            self.pending_protection_used = 0;
+        } else if missing_count > 0 {
+            assert!(
+                env::block_timestamp() >= self.round_deadline,
+                "Protected shortfall can only be covered after the contribution deadline"
+            );
+            let shortfall = self
+                .contribution_amount
+                .checked_mul(missing_count as u128)
+                .expect("Shortfall amount overflow");
+            assert!(
+                self.protection_balance >= shortfall,
+                "Protection reserve is insufficient for the contribution shortfall"
+            );
+            self.protection_balance -= shortfall;
+            self.pending_protection_used = shortfall;
+        } else {
+            self.pending_protection_used = 0;
+        }
 
         let recipient =
             self.payout_order[(self.current_round as usize) % self.payout_order.len()].clone();
@@ -167,9 +190,6 @@ impl Circle {
             .contribution_amount
             .checked_mul(self.members.len() as u128)
             .expect("Pot amount overflow");
-        if self.mode == CircleMode::ProtectedPublic {
-            assert!(self.protection_balance >= pot, "Protected public payout requires a separate protection balance covering the full pot");
-        }
         self.payout_pending = true;
 
         Promise::new(recipient)
@@ -188,8 +208,14 @@ impl Circle {
             PromiseResult::Successful(_) => {
                 self.payout_pending = false;
                 self.payout_complete = true;
+                self.pending_protection_used = 0;
             }
             _ => {
+                self.protection_balance = self
+                    .protection_balance
+                    .checked_add(self.pending_protection_used)
+                    .expect("Protection balance overflow while restoring failed payout");
+                self.pending_protection_used = 0;
                 self.payout_pending = false;
                 self.payout_complete = false;
             }
@@ -240,17 +266,22 @@ impl Circle {
         U128(self.protection_balance)
     }
 
-    /// Protected public circles require protection equal to the entire scheduled pot.
+    /// Current reserve needed to cover every contribution still missing this round.
     pub fn get_required_protection(&self) -> U128 {
-        if self.mode == CircleMode::ProtectedPublic {
+        if self.mode == CircleMode::ProtectedPublic && !self.payout_pending && !self.payout_complete
+        {
             U128(
                 self.contribution_amount
-                    .checked_mul(self.members.len() as u128)
-                    .expect("Pot amount overflow"),
+                    .checked_mul((self.members.len() - self.contribution_count_internal()) as u128)
+                    .expect("Shortfall amount overflow"),
             )
         } else {
             U128(0)
         }
+    }
+
+    pub fn get_pending_protection_used(&self) -> U128 {
+        U128(self.pending_protection_used)
     }
 
     pub fn is_payout_pending(&self) -> bool {
@@ -279,7 +310,7 @@ impl Circle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use near_sdk::test_utils::VMContextBuilder;
+    use near_sdk::test_utils::{testing_env_with_promise_results, VMContextBuilder};
     use near_sdk::testing_env;
 
     const CONTRIBUTION: u128 = 50;
@@ -290,12 +321,16 @@ mod tests {
     }
 
     fn context(caller: &str, deposit: u128) {
+        context_at(caller, deposit, NOW);
+    }
+
+    fn context_at(caller: &str, deposit: u128, timestamp: u64) {
         let mut builder = VMContextBuilder::new();
         builder
             .current_account_id(account("circle.near"))
             .predecessor_account_id(account(caller))
             .attached_deposit(NearToken::from_yoctonear(deposit))
-            .block_timestamp(NOW);
+            .block_timestamp(timestamp);
         testing_env!(builder.build());
     }
 
@@ -357,13 +392,12 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(
-        expected = "Protected public payout requires a separate protection balance covering the full pot"
-    )]
-    fn protected_public_payout_is_blocked_without_full_protection() {
+    #[should_panic(expected = "Protection reserve is insufficient for the contribution shortfall")]
+    fn protected_public_payout_pauses_when_reserve_cannot_cover_shortfall() {
         let mut circle = sample_circle(CircleMode::ProtectedPublic);
-        contribute_all_members(&mut circle);
-        context("treasurer.near", 0);
+        context("alice.near", CONTRIBUTION);
+        circle.contribute();
+        context_at("treasurer.near", 0, NOW + 1_000_000_000);
         let _ = circle.release_payout();
     }
 
@@ -378,6 +412,84 @@ mod tests {
         context("treasurer.near", 0);
         let _ = circle.release_payout();
         assert!(circle.is_payout_pending());
+    }
+
+    #[test]
+    fn protected_public_payout_uses_only_the_actual_shortfall() {
+        let mut circle = sample_circle(CircleMode::ProtectedPublic);
+        context("sponsor.near", CONTRIBUTION);
+        circle.fund_protection();
+        context("alice.near", CONTRIBUTION);
+        circle.contribute();
+        assert_eq!(circle.get_required_protection(), U128(CONTRIBUTION));
+        context_at("treasurer.near", 0, NOW + 1_000_000_000);
+        let _ = circle.release_payout();
+        assert!(circle.is_payout_pending());
+        assert_eq!(circle.get_required_protection(), U128(0));
+        assert_eq!(circle.get_protection_balance(), U128(0));
+        assert_eq!(circle.get_pending_protection_used(), U128(CONTRIBUTION));
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Protected shortfall can only be covered after the contribution deadline"
+    )]
+    fn protected_public_shortfall_cannot_be_covered_before_deadline() {
+        let mut circle = sample_circle(CircleMode::ProtectedPublic);
+        context("sponsor.near", CONTRIBUTION);
+        circle.fund_protection();
+        context("alice.near", CONTRIBUTION);
+        circle.contribute();
+        context("treasurer.near", 0);
+        let _ = circle.release_payout();
+    }
+
+    #[test]
+    fn failed_protected_payout_restores_reserved_shortfall() {
+        let mut circle = sample_circle(CircleMode::ProtectedPublic);
+        context("sponsor.near", CONTRIBUTION);
+        circle.fund_protection();
+        context("alice.near", CONTRIBUTION);
+        circle.contribute();
+        context_at("treasurer.near", 0, NOW + 1_000_000_000);
+        let _ = circle.release_payout();
+        assert_eq!(circle.get_protection_balance(), U128(0));
+
+        let callback_context = VMContextBuilder::new()
+            .current_account_id(account("circle.near"))
+            .predecessor_account_id(account("circle.near"))
+            .block_timestamp(NOW + 1_000_000_000)
+            .build();
+        testing_env_with_promise_results(callback_context, PromiseResult::Failed);
+        circle.on_payout_complete();
+        assert!(!circle.is_payout_pending());
+        assert!(!circle.is_payout_complete());
+        assert_eq!(circle.get_protection_balance(), U128(CONTRIBUTION));
+        assert_eq!(circle.get_pending_protection_used(), U128(0));
+    }
+
+    #[test]
+    fn successful_protected_payout_keeps_reserve_shortfall_spent() {
+        let mut circle = sample_circle(CircleMode::ProtectedPublic);
+        context("sponsor.near", CONTRIBUTION);
+        circle.fund_protection();
+        context("alice.near", CONTRIBUTION);
+        circle.contribute();
+        context_at("treasurer.near", 0, NOW + 1_000_000_000);
+        let _ = circle.release_payout();
+
+        let callback_context = VMContextBuilder::new()
+            .current_account_id(account("circle.near"))
+            .predecessor_account_id(account("circle.near"))
+            .block_timestamp(NOW + 1_000_000_000)
+            .build();
+        testing_env_with_promise_results(callback_context, PromiseResult::Successful(Vec::new()));
+        circle.on_payout_complete();
+        assert!(!circle.is_payout_pending());
+        assert!(circle.is_payout_complete());
+        assert_eq!(circle.get_protection_balance(), U128(0));
+        assert_eq!(circle.get_pending_protection_used(), U128(0));
+        assert_eq!(circle.get_required_protection(), U128(0));
     }
 
     #[test]
