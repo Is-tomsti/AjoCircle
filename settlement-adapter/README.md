@@ -81,3 +81,24 @@ Tests: `node --test settlement-adapter\oneclick-quote.test.mjs settlement-adapte
 `contribution-status.mjs` exports `getMemberContributionStatus({ store, contractClient, intentId })`. The `contractClient` must read the authoritative contract views (`getRound`, `getContribution`, `isCircleCompleted`, `isPayoutPending`, and `isPayoutComplete`). The projection reports swap settlement separately from on-chain contribution state and only reports `CONTRIBUTION_CONFIRMED` when the contract round matches the stored intent round and the member's on-chain contribution exactly matches the trusted native-NEAR amount recorded from circle state.
 
 If the swap is verified but the contract has no contribution, the next action is `UNWRAP_AND_SUBMIT_NATIVE_NEAR_CONTRIBUTION`. This module is a read-only status projection: it does not unwrap assets, submit transactions, or claim that the swap itself satisfies the contribution requirement. A live contract RPC client and authenticated application endpoint remain to be integrated.
+
+## Read-only NEAR contract RPC adapter
+
+`near-contract-read-client.mjs` implements the contract-client interface consumed by `contribution-status.mjs` using NEAR JSON-RPC `query` / `call_function` requests at `final` finality. It maps the contract's snake_case view names to the status projection's methods, encodes view arguments as base64 JSON, and validates rounds, booleans, and contribution amounts. It is read-only and supports an injected `fetchImpl` for deterministic tests.
+
+Example (server-side only):
+
+```js
+import { SettlementStore } from './settlement-store.mjs';
+import { NearContractReadClient } from './near-contract-read-client.mjs';
+import { getMemberContributionStatus } from './contribution-status.mjs';
+
+const store = new SettlementStore({ path: 'data/settlement.sqlite' });
+const contractClient = new NearContractReadClient({
+  rpcUrl: process.env.NEAR_RPC_URL,
+  contractId: process.env.AJOCIRCLE_CONTRACT_ID,
+});
+const status = await getMemberContributionStatus({ store, contractClient, intentId });
+```
+
+The RPC adapter is covered by mocked JSON-RPC tests only. No live RPC call, contract deployment, authentication layer, or member-facing HTTP endpoint has been configured. Keep RPC configuration server-side and authenticate/authorize the caller before exposing intent status; do not let a browser select arbitrary member identity or settlement records.
