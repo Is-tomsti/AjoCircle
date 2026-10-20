@@ -53,3 +53,11 @@ Before deploying, run the contract tests, review the payout and callback logic, 
 ## License
 
 License selection is pending. Do not assume the project is open source until a license is added.
+
+## Application identity and trusted context (prototype)
+
+`settlement-adapter/application-store.mjs` adds a persistent SQLite repository for server-managed circle metadata, auth-provider principal mappings, circle memberships, rounds, approved origin assets, amount limits, and registered refund addresses. It implements the repository interface consumed by `application-context-adapter.mjs`. See `settlement-adapter/APPLICATION_CONTEXT_INTEGRATION.md` and `settlement-adapter/APPLICATION_STORE.md` for the integration contract, schema, and trust boundaries.
+
+The repository is a real local persistence component, **not** a deployed production database or a complete application backend. Authentication remains external and unintegrated; the principal ID must come from verified session/token middleware. Circle/round metadata must be synchronized with and reconciled against the NEAR contract. Provisioning methods are privileged server-side operations and must never be exposed directly to browser clients.
+
+Focused tests: `node --test settlement-adapter/application-context-adapter.test.mjs settlement-adapter/application-store.test.mjs`. The full Node settlement-adapter test suite runs with `node --test settlement-adapter\*.test.mjs` in PowerShell.
