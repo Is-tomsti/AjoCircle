@@ -19,17 +19,18 @@ Ajo Circle is under active development. The current contract is an initial proto
 - Let a member request a full-pot guarantor commitment; only the nominated guarantor can accept, and activation requires the exact full-pot amount to be deposited into contract custody.
 - Expose the guarantor request, acceptance, locked amount, expiry, activation status, and last claimed round.
 - After the contribution deadline, allow anyone to move at most one missing contribution per member and round from that member's active, unexpired guarantee into the separate protection reserve. Claims are rejected if the member contributed, the guarantee is inactive or expired, collateral is insufficient, or that round was already claimed.
-- Keep unclaimed collateral locked. There is still no safe collateral-release path or terminal-circle lifecycle, and guarantee expiry must be planned carefully for the circle's intended duration.
+- Keep unused guarantor collateral locked until every scheduled payout succeeds. The final successful payout marks the circle complete; a completed circle cannot advance to another round, and unused collateral can then be returned asynchronously to its guarantor. Collateral is marked unavailable before the transfer and restored if the transfer callback reports failure.
+- Protection-reserve deposits are still pooled without per-funder ownership accounting, so the contract does not yet offer reserve refunds. Guarantee expiry still needs to be planned carefully for the circle's intended duration.
 - Permit a protected public payout to cover missing contributions only after the deadline and only when the reserve covers the exact shortfall; otherwise the payout pauses.
 - Reserve the shortfall while a payout is pending, keep the deduction after success, and restore it if the transfer callback reports failure.
 - Restrict payout initiation and round advancement to the configured treasurer account.
 - Mark a payout complete only after its transfer callback reports success.
-- Expose round, contribution, mode, current shortfall requirement, protection balance, and pending reserve-use views.
+- Expose round, contribution, mode, circle-completion status, current shortfall requirement, protection balance, and pending reserve-use views.
 
 ### Planned work
 
 1. Contract tests currently pass locally; re-run the WASM release build after each contract change.
-2. Add a safe protection-deposit release policy, terminal-circle handling, and explicit reserve replenishment rules; expand adversarial tests for round transitions and accounting invariants.
+2. Add per-funder protection-reserve accounting before implementing reserve refunds; expand adversarial tests for expiry, pending transfers, round transitions, and accounting invariants.
 3. Design the NEAR Intents settlement adapter so a cross-chain contribution is credited only after settlement is independently verified.
 4. Persist verified reputation events on-chain and connect the deterministic scoring rules to those events.
 5. Add the treasurer agent with narrowly scoped permissions and auditable decisions, then build the member dashboard and deployment scenarios.

@@ -45,6 +45,7 @@ pub struct Guarantee {
 #[ext_contract(ext_self)]
 trait ExtCircle {
     fn on_payout_complete(&mut self);
+    fn on_guarantee_release_complete(&mut self, member: AccountId, amount: U128);
 }
 
 #[near_bindgen]
@@ -64,6 +65,9 @@ pub struct Circle {
     pending_protection_used: u128,
     payout_pending: bool,
     payout_complete: bool,
+    circle_completed: bool,
+    pending_guarantee_release: Option<AccountId>,
+    pending_release_amount: u128,
 }
 
 #[near_bindgen]
@@ -120,6 +124,9 @@ impl Circle {
             pending_protection_used: 0,
             payout_pending: false,
             payout_complete: false,
+            circle_completed: false,
+            pending_guarantee_release: None,
+            pending_release_amount: 0,
         }
     }
 
@@ -153,6 +160,7 @@ impl Circle {
 
     /// A member proposes a full-pot guarantee. The guarantor must accept and fund it separately.
     pub fn request_guarantee(&mut self, guarantor: AccountId, required_amount: U128, expiry: u64) {
+        assert!(!self.circle_completed, "Circle is already completed");
         assert_eq!(
             self.mode,
             CircleMode::ProtectedPublic,
@@ -200,6 +208,7 @@ impl Circle {
 
     /// Only the nominated guarantor may accept the exact stored terms.
     pub fn accept_guarantee(&mut self, member: AccountId) {
+        assert!(!self.circle_completed, "Circle is already completed");
         let mut guarantee = self
             .guarantees
             .get(&member)
@@ -224,6 +233,7 @@ impl Circle {
     /// The nominated guarantor locks the full agreed amount in contract custody.
     #[payable]
     pub fn fund_guarantee(&mut self, member: AccountId) {
+        assert!(!self.circle_completed, "Circle is already completed");
         let mut guarantee = self
             .guarantees
             .get(&member)
@@ -252,6 +262,7 @@ impl Circle {
     /// Moves one missed contribution from locked collateral into the protection reserve.
     /// This is permissionless but only possible after the deadline and for an objective shortfall.
     pub fn claim_guarantee_for_missed_contribution(&mut self, member: AccountId) {
+        assert!(!self.circle_completed, "Circle is already completed");
         assert_eq!(
             self.mode,
             CircleMode::ProtectedPublic,
@@ -302,9 +313,84 @@ impl Circle {
         self.guarantees.get(&member)
     }
 
+    /// Returns unused guarantor collateral only after every scheduled payout succeeds.
+    pub fn release_guarantee(&mut self, member: AccountId) -> Promise {
+        assert!(
+            self.circle_completed,
+            "Circle must be completed before collateral release"
+        );
+        assert!(!self.payout_pending, "A payout is still pending");
+        assert!(
+            self.pending_guarantee_release.is_none(),
+            "A collateral release is already pending"
+        );
+
+        let mut guarantee = self
+            .guarantees
+            .get(&member)
+            .expect("No guarantee exists for this member");
+        assert!(guarantee.active, "Guarantee is not active");
+        let amount = guarantee.locked_amount;
+        assert!(amount > 0, "No collateral remains to release");
+
+        guarantee.locked_amount = 0;
+        guarantee.active = false;
+        self.guarantees.insert(&member, &guarantee);
+        self.pending_guarantee_release = Some(member.clone());
+        self.pending_release_amount = amount;
+
+        Promise::new(guarantee.guarantor)
+            .transfer(NearToken::from_yoctonear(amount))
+            .then(
+                ext_self::ext(env::current_account_id())
+                    .with_static_gas(CALLBACK_GAS)
+                    .on_guarantee_release_complete(member, U128(amount)),
+            )
+    }
+
+    #[private]
+    pub fn on_guarantee_release_complete(&mut self, member: AccountId, amount: U128) {
+        assert_eq!(
+            self.pending_guarantee_release.as_ref(),
+            Some(&member),
+            "No matching collateral release is pending"
+        );
+        assert_eq!(
+            self.pending_release_amount, amount.0,
+            "Collateral release amount does not match pending amount"
+        );
+
+        match env::promise_result(0) {
+            PromiseResult::Successful(_) => {
+                self.pending_guarantee_release = None;
+                self.pending_release_amount = 0;
+            }
+            _ => {
+                let mut guarantee = self
+                    .guarantees
+                    .get(&member)
+                    .expect("Guarantee disappeared during collateral release");
+                assert!(
+                    !guarantee.active && guarantee.locked_amount == 0,
+                    "Guarantee state changed while collateral release was pending"
+                );
+                guarantee.locked_amount = amount.0;
+                guarantee.active = true;
+                self.guarantees.insert(&member, &guarantee);
+                self.pending_guarantee_release = None;
+                self.pending_release_amount = 0;
+            }
+        }
+    }
+
+    pub fn is_circle_completed(&self) -> bool {
+        self.circle_completed
+    }
+
     /// Adds separately accounted protection funds, never counted as contributions.
     #[payable]
     pub fn fund_protection(&mut self) {
+        assert!(!self.circle_completed, "Circle is already completed");
         assert_eq!(
             self.mode,
             CircleMode::ProtectedPublic,
@@ -320,6 +406,7 @@ impl Circle {
 
     pub fn release_payout(&mut self) -> Promise {
         self.assert_treasurer();
+        assert!(!self.circle_completed, "Circle is already completed");
         assert!(
             !self.payout_pending && !self.payout_complete,
             "Payout is already pending or complete"
@@ -376,6 +463,9 @@ impl Circle {
                 self.payout_pending = false;
                 self.payout_complete = true;
                 self.pending_protection_used = 0;
+                if (self.current_round as usize) + 1 >= self.payout_order.len() {
+                    self.circle_completed = true;
+                }
             }
             _ => {
                 self.protection_balance = self
@@ -391,6 +481,7 @@ impl Circle {
 
     pub fn advance_round(&mut self, new_deadline: u64) {
         self.assert_treasurer();
+        assert!(!self.circle_completed, "Circle is already completed");
         assert!(
             self.payout_complete,
             "Payout must succeed before advancing the round"
@@ -687,6 +778,41 @@ mod tests {
         circle.contribute();
     }
 
+    fn complete_current_payout(circle: &mut Circle) {
+        contribute_all_members(circle);
+        context("treasurer.near", 0);
+        let _ = circle.release_payout();
+        let callback_context = VMContextBuilder::new()
+            .current_account_id(account("circle.near"))
+            .predecessor_account_id(account("circle.near"))
+            .block_timestamp(NOW + 1_000_000_000)
+            .build();
+        testing_env_with_promise_results(callback_context, PromiseResult::Successful(Vec::new()));
+        circle.on_payout_complete();
+    }
+
+    fn completed_circle_with_funded_guarantee() -> Circle {
+        let mut circle = sample_circle(CircleMode::ProtectedPublic);
+        context("alice.near", 0);
+        circle.request_guarantee(
+            account("guarantor.near"),
+            U128(2 * CONTRIBUTION),
+            NOW + 3_000_000_000,
+        );
+        context("guarantor.near", 0);
+        circle.accept_guarantee(account("alice.near"));
+        context("guarantor.near", 2 * CONTRIBUTION);
+        circle.fund_guarantee(account("alice.near"));
+
+        complete_current_payout(&mut circle);
+        assert!(!circle.is_circle_completed());
+        context("treasurer.near", 0);
+        circle.advance_round(NOW + 2_000_000_000);
+        complete_current_payout(&mut circle);
+        assert!(circle.is_circle_completed());
+        circle
+    }
+
     #[test]
     #[should_panic(expected = "Protection reserve is insufficient for the contribution shortfall")]
     fn protected_public_payout_pauses_when_reserve_cannot_cover_shortfall() {
@@ -786,6 +912,75 @@ mod tests {
         assert_eq!(circle.get_protection_balance(), U128(0));
         assert_eq!(circle.get_pending_protection_used(), U128(0));
         assert_eq!(circle.get_required_protection(), U128(0));
+    }
+
+    #[test]
+    #[should_panic(expected = "Circle must be completed before collateral release")]
+    fn collateral_cannot_be_released_before_final_payout() {
+        let mut circle = sample_circle(CircleMode::ProtectedPublic);
+        context("anyone.near", 0);
+        let _ = circle.release_guarantee(account("alice.near"));
+    }
+
+    #[test]
+    fn final_successful_payout_completes_circle_and_unused_collateral_can_be_released() {
+        let mut circle = completed_circle_with_funded_guarantee();
+        assert!(circle.is_circle_completed());
+        assert_eq!(circle.get_round(), 1);
+
+        context("anyone.near", 0);
+        let _ = circle.release_guarantee(account("alice.near"));
+        let pending = circle.get_guarantee(account("alice.near")).unwrap();
+        assert!(!pending.active);
+        assert_eq!(pending.locked_amount, 0);
+
+        let callback_context = VMContextBuilder::new()
+            .current_account_id(account("circle.near"))
+            .predecessor_account_id(account("circle.near"))
+            .block_timestamp(NOW + 2_000_000_000)
+            .build();
+        testing_env_with_promise_results(callback_context, PromiseResult::Successful(Vec::new()));
+        circle.on_guarantee_release_complete(account("alice.near"), U128(2 * CONTRIBUTION));
+
+        let released = circle.get_guarantee(account("alice.near")).unwrap();
+        assert!(!released.active);
+        assert_eq!(released.locked_amount, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "A collateral release is already pending")]
+    fn only_one_collateral_release_can_be_pending() {
+        let mut circle = completed_circle_with_funded_guarantee();
+        context("anyone.near", 0);
+        let _ = circle.release_guarantee(account("alice.near"));
+        let _ = circle.release_guarantee(account("alice.near"));
+    }
+
+    #[test]
+    fn failed_collateral_release_restores_locked_amount_and_active_guarantee() {
+        let mut circle = completed_circle_with_funded_guarantee();
+        context("anyone.near", 0);
+        let _ = circle.release_guarantee(account("alice.near"));
+
+        let callback_context = VMContextBuilder::new()
+            .current_account_id(account("circle.near"))
+            .predecessor_account_id(account("circle.near"))
+            .block_timestamp(NOW + 2_000_000_000)
+            .build();
+        testing_env_with_promise_results(callback_context, PromiseResult::Failed);
+        circle.on_guarantee_release_complete(account("alice.near"), U128(2 * CONTRIBUTION));
+
+        let restored = circle.get_guarantee(account("alice.near")).unwrap();
+        assert!(restored.active);
+        assert_eq!(restored.locked_amount, 2 * CONTRIBUTION);
+    }
+
+    #[test]
+    #[should_panic(expected = "Circle is already completed")]
+    fn cannot_advance_after_final_payout() {
+        let mut circle = completed_circle_with_funded_guarantee();
+        context("treasurer.near", 0);
+        circle.advance_round(NOW + 4_000_000_000);
     }
 
     #[test]
