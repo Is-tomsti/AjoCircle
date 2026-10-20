@@ -124,3 +124,18 @@ test('real HTTP request rejects client-supplied member identity fields', async (
     assert.equal(fixture.quoteRequests.length, 0);
   });
 });
+
+test('valid authenticated session cannot request a quote as a suspended circle member', async () => {
+  const fixture = createFixture();
+  fixture.applicationStore.setMembership({ circleId: 'circle-http', memberId: 'member-http', status: 'SUSPENDED' });
+  await withServer(fixture, async baseUrl => {
+    const response = await fetch(baseUrl + MEMBER_QUOTE_ENDPOINT_PATH, {
+      method: 'POST', headers: { authorization: 'Bearer test-only-session', 'content-type': 'application/json' },
+      body: JSON.stringify(validBody),
+    });
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), { error: 'MEMBERSHIP_REQUIRED' });
+    assert.equal(fixture.quoteRequests.length, 0);
+    assert.equal(fixture.settlementStore.getIntent('http-integration-intent'), null);
+  });
+});
