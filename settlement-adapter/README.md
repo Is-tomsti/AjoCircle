@@ -102,3 +102,11 @@ const status = await getMemberContributionStatus({ store, contractClient, intent
 ```
 
 The RPC adapter is covered by mocked JSON-RPC tests only. No live RPC call, contract deployment, authentication layer, or member-facing HTTP endpoint has been configured. Keep RPC configuration server-side and authenticate/authorize the caller before exposing intent status; do not let a browser select arbitrary member identity or settlement records.
+
+## Authenticated member contribution status handler
+
+`contribution-status-handler.mjs` exports `createContributionStatusHandler({ store, contractClient, authorizeIntent })`, a framework-free Node.js HTTP handler for `GET /api/member/contribution-status?intentId=...`. It only performs contract reads after the required authorization callback returns `true` for the authenticated request and trusted stored intent. It sends `no-store` JSON responses and does not expose internal RPC/store errors. Unknown intents return 404; authorization failures return 403; unavailable status returns 503.
+
+The authorization callback is deliberately mandatory: connect it to the application's real authentication/session and authoritative circle membership/permissions before mounting the handler. This repository currently has no application auth system, trusted member-context resolver, or HTTP server, so the handler is an integration component rather than a live endpoint. Do not substitute a browser-supplied member ID for verified identity.
+
+Tests mock the request/response and contract client. They verify authorization gates contract reads, expected HTTP responses, and safe error handling; no server or live RPC endpoint was started.
