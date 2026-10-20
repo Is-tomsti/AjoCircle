@@ -35,6 +35,7 @@ function toIntent(row) {
     quoteDeadline: row.quote_deadline ?? undefined,
     quoteSignature: row.quote_signature ?? undefined,
     quoteCorrelationId: row.quote_correlation_id ?? undefined,
+    requiredContributionAmount: row.required_contribution_amount ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   });
@@ -76,6 +77,7 @@ export class SettlementStore {
     ensureColumn(this.db, 'pending_intents', 'quote_deadline', 'TEXT');
     ensureColumn(this.db, 'pending_intents', 'quote_signature', 'TEXT');
     ensureColumn(this.db, 'pending_intents', 'quote_correlation_id', 'TEXT');
+    ensureColumn(this.db, 'pending_intents', 'required_contribution_amount', 'TEXT');
   }
 
   createPendingIntent(input) {
@@ -96,12 +98,12 @@ export class SettlementStore {
       INSERT INTO pending_intents
       (intent_id, deposit_address, circle_id, member_id, round_number, destination_asset,
        recipient, minimum_amount_out, status, created_at, updated_at, deposit_memo, origin_asset,
-       amount_in, quoted_amount_out, quote_deadline, quote_signature, quote_correlation_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       amount_in, quoted_amount_out, quote_deadline, quote_signature, quote_correlation_id, required_contribution_amount)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(record.intentId, record.depositAddress, record.circleId, record.memberId, input.round,
       record.destinationAsset, record.recipient, input.minimumAmountOut, now, now, optional('depositMemo'),
       optional('originAsset'), amountIn, quotedAmountOut, optional('quoteDeadline'),
-      optional('quoteSignature'), optional('quoteCorrelationId'));
+      optional('quoteSignature'), optional('quoteCorrelationId'), optional('requiredContributionAmount'));
     return this.getIntent(record.intentId);
   }
 

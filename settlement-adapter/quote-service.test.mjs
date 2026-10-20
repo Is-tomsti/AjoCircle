@@ -37,6 +37,7 @@ test('creates a quote intent from trusted member context and persists quote evid
   assert.equal(stored.memberId, 'member-1');
   assert.equal(stored.depositMemo, 'memo-123');
   assert.equal(stored.quoteSignature, 'sig-1');
+  assert.equal(stored.requiredContributionAmount, trusted.requiredContributionAmount);
   assert.equal(stored.status, 'PENDING');
   input.store.close();
 });

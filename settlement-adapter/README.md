@@ -74,3 +74,10 @@ The SQLite store adds quote metadata columns using additive schema migration, so
 **Important product boundary:** a successful quote or verified wrapped-NEAR delivery is not a contribution. The member still needs to unwrap and call the current contract's native-NEAR `contribute()` method with the exact amount. The quote service is not connected to a live application database or frontend, and it has not been tested with real 1Click credentials or funds.
 
 Tests: `node --test settlement-adapter\oneclick-quote.test.mjs settlement-adapter\quote-service.test.mjs settlement-adapter\oneclick.test.mjs settlement-adapter\settlement-store.test.mjs settlement-adapter\settlement-service.test.mjs`.
+
+
+## Member contribution status projection
+
+`contribution-status.mjs` exports `getMemberContributionStatus({ store, contractClient, intentId })`. The `contractClient` must read the authoritative contract views (`getRound`, `getContribution`, `isCircleCompleted`, `isPayoutPending`, and `isPayoutComplete`). The projection reports swap settlement separately from on-chain contribution state and only reports `CONTRIBUTION_CONFIRMED` when the contract round matches the stored intent round and the member's on-chain contribution exactly matches the trusted native-NEAR amount recorded from circle state.
+
+If the swap is verified but the contract has no contribution, the next action is `UNWRAP_AND_SUBMIT_NATIVE_NEAR_CONTRIBUTION`. This module is a read-only status projection: it does not unwrap assets, submit transactions, or claim that the swap itself satisfies the contribution requirement. A live contract RPC client and authenticated application endpoint remain to be integrated.

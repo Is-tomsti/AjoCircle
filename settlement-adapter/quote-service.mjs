@@ -1,4 +1,4 @@
-﻿import { randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { buildMemberMediatedQuoteRequest } from './quote-request.mjs';
 
 const positiveUnits = (value, field) => {
@@ -76,6 +76,7 @@ export async function createTrustedMemberQuote({
     destinationAsset: request.destinationAsset,
     recipient: memberNearAccount,
     minimumAmountOut,
+    requiredContributionAmount,
     originAsset: asset,
     amountIn: inputAmount,
     quotedAmountOut: positiveUnits(quote.amountOut, 'quote amountOut'),
@@ -96,6 +97,7 @@ export async function createTrustedMemberQuote({
     recipient: intent.recipient,
     quotedAmountOut: intent.quotedAmountOut,
     minimumAmountOut: intent.minimumAmountOut,
+    requiredContributionAmount: intent.requiredContributionAmount,
     deadline: intent.quoteDeadline,
     status: intent.status,
   });
