@@ -1,18 +1,18 @@
 # AjoCircle settlement adapter (prototype)
 
-This crate is an isolated, testable validation core. It is not yet connected to NEAR Intents, a 1Click API, a chain RPC, a database, or the AjoCircle contract.
+This folder contains an isolated Rust validation core plus a Node.js 1Click status client. The Node.js client calls the documented `GET /v0/status` endpoint using a server-side credential and validates the response against a trusted pending-quote record. It is not connected to a production AjoCircle server, database, wallet, or contract.
 
 ## Current behavior
 
-- Queries settlement evidence through a `SettlementSource` interface; callers must not provide a self-asserted `settled=true` flag.
-- Fails closed on source errors, non-settled statuses, insufficient confirmations, and mismatches in chain, transaction, reference, destination, asset, or amount.
-- Binds the payment reference to circle ID, member ID, round, exact amount, and a unique nonce.
-- Rejects a reused intent ID or source-chain transaction within the running adapter process.
-- Returns a `VerifiedSettlement` record only after all checks pass.
+- The Rust core validates settlement records through a `SettlementSource` interface and rejects replay within one process.
+- `oneclick.mjs` calls the documented `GET https://1click.chaindefuser.com/v0/status` endpoint, with a server-side bearer credential, a 10-second timeout, and optional `depositMemo` support.
+- It accepts only `SUCCESS`, requires the original quote deposit address, destination asset, recipient, actual output amount, and at least one destination transaction hash.
+- It compares those fields against a trusted server-side pending-quote record and enforces the configured minimum output amount using integer base units (`BigInt`).
+- Unit tests mock the HTTP response; they do not make live API requests or prove live credentials work.
 
 ## Critical limits
 
-- The included source is only a test mock. There is no production source implementation or real NEAR Intents integration.
+- The API client is implemented but has not yet been exercised against the live 1Click service; there is no production service integration or end-to-end payment flow.
 - The replay sets are in memory. They do not survive a restart and are not safe for multiple adapter instances. Production must persist and atomically consume intent IDs and transaction IDs in a database with unique constraints.
 - The request must come from a trusted server-side pending-intent record created before the user initiates settlement. Never accept arbitrary circle/member/round fields as trusted input from a browser.
 - The production source must independently query the relevant chain/official settlement status, enforce chain-specific finality, and extract the reference from actual transaction evidence. An unavailable source is an error, not proof of failure or success.
@@ -22,7 +22,8 @@ This crate is an isolated, testable validation core. It is not yet connected to 
 ## Run tests
 
 ```powershell
-cargo test --manifest-path settlement-adapter\Cargo.toml
+node --test settlement-adapter\oneclick.test.mjs
+cargo test --manifest-path settlement-adapter\Cargo.toml --offline
 ```
 
 ## Before production

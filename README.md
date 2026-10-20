@@ -32,7 +32,7 @@ Ajo Circle is under active development. The current contract is an initial proto
 
 1. Contract tests currently pass locally; re-run the WASM release build after each contract change.
 2. Expand adversarial tests for guarantee expiry, concurrent transfer callbacks, and reserve-accounting invariants.
-3. A standalone `settlement-adapter/` prototype now validates settlement status, confirmation threshold, exact destination/asset/amount, circle/member/round-bound payment reference, and in-process replay attempts. It is not connected to a live NEAR Intents source or the contract; production work must add authoritative chain/API queries and durable atomic replay protection.
+3. `settlement-adapter/` now includes a Node.js 1Click status client that requests swap status and fails closed unless status is `SUCCESS`, the original deposit address, recipient, destination asset, minimum output amount, and destination transaction evidence match a trusted stored quote. Offline tests cover the response checks. The live API has not been exercised and this adapter is not connected to the app, a database, or the contract; next add durable atomic replay protection and end-to-end test infrastructure.
 4. Persist verified reputation events on-chain and connect the deterministic scoring rules to those events.
 5. Add the treasurer agent with narrowly scoped permissions and auditable decisions, then build the member dashboard and deployment scenarios.
 
