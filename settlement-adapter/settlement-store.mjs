@@ -4,6 +4,11 @@ import { verifyExpectedDelivery } from './oneclick.mjs';
 const REQUIRED_TEXT = ['intentId', 'depositAddress', 'circleId', 'memberId', 'destinationAsset', 'recipient'];
 const AMOUNT_RE = /^(0|[1-9][0-9]*)$/;
 
+function ensureColumn(db, table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!columns.some(item => item.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
 function requireText(value, field) {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${field} must be a non-empty string`);
   return value.trim();
@@ -23,6 +28,13 @@ function toIntent(row) {
     status: row.status,
     amountOut: row.amount_out,
     destinationTxHashes: row.destination_tx_hashes ? JSON.parse(row.destination_tx_hashes) : [],
+    depositMemo: row.deposit_memo ?? undefined,
+    originAsset: row.origin_asset ?? undefined,
+    amountIn: row.amount_in ?? undefined,
+    quotedAmountOut: row.quoted_amount_out ?? undefined,
+    quoteDeadline: row.quote_deadline ?? undefined,
+    quoteSignature: row.quote_signature ?? undefined,
+    quoteCorrelationId: row.quote_correlation_id ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   });
@@ -57,6 +69,13 @@ export class SettlementStore {
       CREATE INDEX IF NOT EXISTS consumed_transactions_by_intent
         ON consumed_destination_transactions(intent_id);
     `);
+    ensureColumn(this.db, 'pending_intents', 'deposit_memo', 'TEXT');
+    ensureColumn(this.db, 'pending_intents', 'origin_asset', 'TEXT');
+    ensureColumn(this.db, 'pending_intents', 'amount_in', 'TEXT');
+    ensureColumn(this.db, 'pending_intents', 'quoted_amount_out', 'TEXT');
+    ensureColumn(this.db, 'pending_intents', 'quote_deadline', 'TEXT');
+    ensureColumn(this.db, 'pending_intents', 'quote_signature', 'TEXT');
+    ensureColumn(this.db, 'pending_intents', 'quote_correlation_id', 'TEXT');
   }
 
   createPendingIntent(input) {
@@ -67,14 +86,22 @@ export class SettlementStore {
     if (typeof input.minimumAmountOut !== 'string' || !AMOUNT_RE.test(input.minimumAmountOut)) {
       throw new Error('minimumAmountOut must be an integer base-unit string');
     }
+    const optional = field => input[field] === undefined ? null : requireText(input[field], field);
+    const amountIn = optional('amountIn');
+    const quotedAmountOut = optional('quotedAmountOut');
+    if (amountIn !== null && (!AMOUNT_RE.test(amountIn) || BigInt(amountIn) <= 0n)) throw new Error('amountIn must be a positive base-unit integer string');
+    if (quotedAmountOut !== null && (!AMOUNT_RE.test(quotedAmountOut) || BigInt(quotedAmountOut) <= 0n)) throw new Error('quotedAmountOut must be a positive base-unit integer string');
     const now = this.clock();
     this.db.prepare(`
       INSERT INTO pending_intents
       (intent_id, deposit_address, circle_id, member_id, round_number, destination_asset,
-       recipient, minimum_amount_out, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
+       recipient, minimum_amount_out, status, created_at, updated_at, deposit_memo, origin_asset,
+       amount_in, quoted_amount_out, quote_deadline, quote_signature, quote_correlation_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(record.intentId, record.depositAddress, record.circleId, record.memberId, input.round,
-      record.destinationAsset, record.recipient, input.minimumAmountOut, now, now);
+      record.destinationAsset, record.recipient, input.minimumAmountOut, now, now, optional('depositMemo'),
+      optional('originAsset'), amountIn, quotedAmountOut, optional('quoteDeadline'),
+      optional('quoteSignature'), optional('quoteCorrelationId'));
     return this.getIntent(record.intentId);
   }
 

@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SettlementStore } from './settlement-store.mjs';
 import { parseOneClickStatus } from './oneclick.mjs';
@@ -12,6 +12,7 @@ const intent = {
   round: 1,
   destinationAsset: 'nep141:wrap.near',
   recipient: 'alice.near',
+  depositMemo: 'trusted-memo-1',
   minimumAmountOut: '100',
 };
 const payload = {
@@ -27,14 +28,17 @@ test('service gets the deposit address from the trusted stored intent and persis
   const store = new SettlementStore();
   store.createPendingIntent(intent);
   let requestedAddress;
+  let requestedMemo;
   const statusClient = {
-    async getStatus({ depositAddress }) {
+    async getStatus({ depositAddress, depositMemo }) {
       requestedAddress = depositAddress;
+      requestedMemo = depositMemo;
       return parseOneClickStatus(payload);
     },
   };
   const result = await verifyPendingIntentDelivery({ store, statusClient, intentId: intent.intentId });
   assert.equal(requestedAddress, 'trusted-deposit-1');
+  assert.equal(requestedMemo, 'trusted-memo-1');
   assert.equal(result.status, 'VERIFIED_DELIVERY');
   assert.equal(result.amountOut, '120');
   store.close();

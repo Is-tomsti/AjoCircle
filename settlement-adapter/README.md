@@ -61,3 +61,16 @@ Implement and review a real settlement-source adapter; persist pending intents a
 `quote-request.mjs` constructs a validated 1Click exact-input request that targets the member's NEAR account and requests `nep141:wrap.near`. It validates base-unit amounts, recipient/refund fields, slippage bounds, and deposit mode. Its tests are local unit tests only; it does not call the 1Click API, store a quote, or mark a circle contribution complete.
 
 This is the first integration step for the member-mediated MVP. A quote must be generated from trusted server-side circle/member state, and a delivered wrapped-NEAR swap must still be followed by the member's native-NEAR `contribute()` call under the current contract.
+
+
+## Trusted quote creation workflow (local prototype)
+
+`oneclick-quote.mjs` adds a server-side `POST /v0/quote` client. It requires a server-held 1Click credential, validates the echoed quote request, checks integer base-unit output values, and retains the deposit address, optional memo, deadline, signature, and correlation ID. Tests mock the HTTP response; no live quote request was sent.
+
+`quote-service.mjs` exports `createTrustedMemberQuote(...)`. The caller must provide a trusted `resolveTrustedContext` implementation backed by the application's authoritative circle/member/round records. The resolver must return matching IDs and statuses (`ACTIVE`, `ACTIVE`, `OPEN`), the member's NEAR account, required contribution amount in base units, allowed origin assets, the registered refund address for each asset, and a per-asset maximum input amount. The service rejects unknown assets, unregistered refund addresses, inactive/closed rounds, oversized input, mismatched quote data, and a quoted minimum output below the required contribution amount. It then creates a durable pending intent.
+
+The SQLite store adds quote metadata columns using additive schema migration, so existing databases are retained. Deposit memos are stored and passed back to the status endpoint when verifying settlement. Quote signatures and correlation IDs are stored for traceability. Do not expose the store or trusted-context resolver to browser code; this is a module boundary, not an authenticated HTTP server.
+
+**Important product boundary:** a successful quote or verified wrapped-NEAR delivery is not a contribution. The member still needs to unwrap and call the current contract's native-NEAR `contribute()` method with the exact amount. The quote service is not connected to a live application database or frontend, and it has not been tested with real 1Click credentials or funds.
+
+Tests: `node --test settlement-adapter\oneclick-quote.test.mjs settlement-adapter\quote-service.test.mjs settlement-adapter\oneclick.test.mjs settlement-adapter\settlement-store.test.mjs settlement-adapter\settlement-service.test.mjs`.

@@ -1,4 +1,4 @@
-﻿import { parseOneClickStatus } from './oneclick.mjs';
+import { parseOneClickStatus } from './oneclick.mjs';
 
 export async function verifyPendingIntentDelivery({ store, statusClient, intentId } = {}) {
   if (!store || typeof store.getIntent !== 'function'
@@ -21,6 +21,7 @@ export async function verifyPendingIntentDelivery({ store, statusClient, intentI
 
   const observed = await statusClient.getStatus({
     depositAddress: trustedIntent.depositAddress,
+    ...(trustedIntent.depositMemo === undefined ? {} : { depositMemo: trustedIntent.depositMemo }),
   });
   // A real OneClickStatusClient already parses its response; parsing again is not needed.
   // Injected clients may return the documented JSON payload, which is parsed here for tests/adapters.

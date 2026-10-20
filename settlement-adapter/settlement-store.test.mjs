@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { SettlementStore } from './settlement-store.mjs';
 import { parseOneClickStatus } from './oneclick.mjs';
 
@@ -152,6 +153,44 @@ test('independent SQLite connections cannot consume the same intent twice', asyn
   } finally {
     first.close();
     second.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+
+test('adds quote metadata columns to an existing legacy database without losing records', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'ajocircle-legacy-schema-'));
+  const path = join(directory, 'settlement.sqlite');
+  try {
+    const legacy = new DatabaseSync(path);
+    legacy.exec(`CREATE TABLE pending_intents (
+      intent_id TEXT PRIMARY KEY, deposit_address TEXT NOT NULL UNIQUE, circle_id TEXT NOT NULL,
+      member_id TEXT NOT NULL, round_number INTEGER NOT NULL CHECK (round_number >= 0),
+      destination_asset TEXT NOT NULL, recipient TEXT NOT NULL, minimum_amount_out TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('PENDING', 'VERIFIED_DELIVERY')), amount_out TEXT,
+      destination_tx_hashes TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );`);
+    legacy.prepare(`INSERT INTO pending_intents
+      (intent_id, deposit_address, circle_id, member_id, round_number, destination_asset, recipient,
+       minimum_amount_out, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)`
+    ).run('legacy-1', 'legacy-deposit', 'circle-1', 'member-1', 1, 'nep141:wrap.near', 'alice.near', '100', tick(), tick());
+    legacy.close();
+
+    const store = new SettlementStore({ path, clock: tick });
+    assert.equal(store.getIntent('legacy-1').status, 'PENDING');
+    store.createPendingIntent(intent({
+      intentId: 'new-quote-1', depositAddress: 'new-deposit', depositMemo: 'memo-1',
+      originAsset: 'asset:source', amountIn: '200', quotedAmountOut: '150',
+      quoteDeadline: '2026-10-21T00:00:00Z', quoteSignature: 'signature-1', quoteCorrelationId: 'corr-1',
+    }));
+    const saved = store.getIntent('new-quote-1');
+    assert.equal(saved.depositMemo, 'memo-1');
+    assert.equal(saved.originAsset, 'asset:source');
+    assert.equal(saved.quoteSignature, 'signature-1');
+    assert.equal(saved.quoteCorrelationId, 'corr-1');
+    store.close();
+  } finally {
     rmSync(directory, { recursive: true, force: true });
   }
 });
