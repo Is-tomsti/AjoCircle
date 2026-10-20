@@ -27,6 +27,7 @@ pub enum CircleMode {
 enum StorageKey {
     Contributions,
     Guarantees,
+    ProtectionContributions,
 }
 
 #[derive(BorshDeserialize, BorshSerialize, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,6 +47,7 @@ pub struct Guarantee {
 trait ExtCircle {
     fn on_payout_complete(&mut self);
     fn on_guarantee_release_complete(&mut self, member: AccountId, amount: U128);
+    fn on_reserve_refund_complete(&mut self, funder: AccountId, amount: U128);
 }
 
 #[near_bindgen]
@@ -59,15 +61,20 @@ pub struct Circle {
     round_deadline: u64,
     contributions: LookupMap<AccountId, u128>,
     guarantees: LookupMap<AccountId, Guarantee>,
+    reserve_shares: LookupMap<AccountId, u128>,
+    reserve_funders: Vec<AccountId>,
     treasurer_agent: AccountId,
     mode: CircleMode,
     protection_balance: u128,
     pending_protection_used: u128,
+    pending_reserve_used_by: Vec<(AccountId, u128)>,
     payout_pending: bool,
     payout_complete: bool,
     circle_completed: bool,
     pending_guarantee_release: Option<AccountId>,
     pending_release_amount: u128,
+    pending_reserve_refund: Option<AccountId>,
+    pending_reserve_refund_amount: u128,
 }
 
 #[near_bindgen]
@@ -118,15 +125,20 @@ impl Circle {
             round_deadline,
             contributions: LookupMap::new(StorageKey::Contributions),
             guarantees: LookupMap::new(StorageKey::Guarantees),
+            reserve_shares: LookupMap::new(StorageKey::ProtectionContributions),
+            reserve_funders: Vec::new(),
             treasurer_agent,
             mode,
             protection_balance: 0,
             pending_protection_used: 0,
+            pending_reserve_used_by: Vec::new(),
             payout_pending: false,
             payout_complete: false,
             circle_completed: false,
             pending_guarantee_release: None,
             pending_release_amount: 0,
+            pending_reserve_refund: None,
+            pending_reserve_refund_amount: 0,
         }
     }
 
@@ -281,6 +293,10 @@ impl Circle {
             "Member has contributed this round"
         );
 
+        assert!(
+            self.pending_reserve_refund.is_none(),
+            "A reserve refund is pending"
+        );
         let mut guarantee = self
             .guarantees
             .get(&member)
@@ -325,6 +341,10 @@ impl Circle {
             "A collateral release is already pending"
         );
 
+        assert!(
+            self.pending_reserve_refund.is_none(),
+            "A reserve refund is pending"
+        );
         let mut guarantee = self
             .guarantees
             .get(&member)
@@ -398,10 +418,97 @@ impl Circle {
         );
         let deposit = env::attached_deposit().as_yoctonear();
         assert!(deposit > 0, "Protection deposit must be positive");
+        let funder = env::predecessor_account_id();
+        let previous = self.reserve_shares.get(&funder).unwrap_or(0);
+        let updated = previous
+            .checked_add(deposit)
+            .expect("Reserve share overflow");
+        self.reserve_shares.insert(&funder, &updated);
+        if previous == 0 {
+            self.reserve_funders.push(funder);
+        }
         self.protection_balance = self
             .protection_balance
             .checked_add(deposit)
             .expect("Protection balance overflow");
+    }
+
+    pub fn get_reserve_share(&self, funder: AccountId) -> U128 {
+        U128(self.reserve_shares.get(&funder).unwrap_or(0))
+    }
+
+    pub fn refund_protection(&mut self) -> Promise {
+        assert!(
+            self.circle_completed,
+            "Circle must be completed before reserve refunds"
+        );
+        assert!(!self.payout_pending, "A payout is still pending");
+        assert!(
+            self.pending_guarantee_release.is_none(),
+            "A collateral release is pending"
+        );
+        assert!(
+            self.pending_reserve_refund.is_none(),
+            "A reserve refund is already pending"
+        );
+        assert!(
+            self.pending_guarantee_release.is_none(),
+            "A collateral release is pending"
+        );
+
+        let funder = env::predecessor_account_id();
+        let amount = self.reserve_shares.get(&funder).unwrap_or(0);
+        assert!(amount > 0, "No refundable reserve balance");
+        self.reserve_shares.insert(&funder, &0);
+        self.protection_balance = self
+            .protection_balance
+            .checked_sub(amount)
+            .expect("Reserve share exceeds available protection balance");
+        self.pending_reserve_refund = Some(funder.clone());
+        self.pending_reserve_refund_amount = amount;
+
+        Promise::new(funder.clone())
+            .transfer(NearToken::from_yoctonear(amount))
+            .then(
+                ext_self::ext(env::current_account_id())
+                    .with_static_gas(CALLBACK_GAS)
+                    .on_reserve_refund_complete(funder, U128(amount)),
+            )
+    }
+
+    #[private]
+    pub fn on_reserve_refund_complete(&mut self, funder: AccountId, amount: U128) {
+        assert_eq!(
+            self.pending_reserve_refund.as_ref(),
+            Some(&funder),
+            "No matching reserve refund is pending"
+        );
+        assert_eq!(
+            self.pending_reserve_refund_amount, amount.0,
+            "Reserve refund amount does not match pending amount"
+        );
+
+        match env::promise_result(0) {
+            PromiseResult::Successful(_) => {
+                self.pending_reserve_refund = None;
+                self.pending_reserve_refund_amount = 0;
+            }
+            _ => {
+                let share = self.reserve_shares.get(&funder).unwrap_or(0);
+                self.reserve_shares.insert(
+                    &funder,
+                    &share
+                        .checked_add(amount.0)
+                        .expect("Reserve share overflow while restoring failed refund"),
+                );
+                self.protection_balance = self
+                    .protection_balance
+                    .checked_add(amount.0)
+                    .expect("Protection balance overflow while restoring failed refund");
+                self.pending_reserve_refund = None;
+                self.pending_reserve_refund_amount = 0;
+            }
+        }
     }
 
     pub fn release_payout(&mut self) -> Promise {
@@ -433,6 +540,20 @@ impl Circle {
                 "Protection reserve is insufficient for the contribution shortfall"
             );
             self.protection_balance -= shortfall;
+            let mut remaining_shortfall = shortfall;
+            for funder in self.reserve_funders.clone() {
+                if remaining_shortfall == 0 {
+                    break;
+                }
+                let share = self.reserve_shares.get(&funder).unwrap_or(0);
+                let used = share.min(remaining_shortfall);
+                self.reserve_shares.insert(&funder, &(share - used));
+                if used > 0 {
+                    self.pending_reserve_used_by.push((funder, used));
+                }
+                remaining_shortfall -= used;
+            }
+            // Any remainder may come from claimed guarantee collateral, which is not refundable to reserve funders.
             self.pending_protection_used = shortfall;
         } else {
             self.pending_protection_used = 0;
@@ -463,6 +584,7 @@ impl Circle {
                 self.payout_pending = false;
                 self.payout_complete = true;
                 self.pending_protection_used = 0;
+                self.pending_reserve_used_by.clear();
                 if (self.current_round as usize) + 1 >= self.payout_order.len() {
                     self.circle_completed = true;
                 }
@@ -473,6 +595,13 @@ impl Circle {
                     .checked_add(self.pending_protection_used)
                     .expect("Protection balance overflow while restoring failed payout");
                 self.pending_protection_used = 0;
+                for (funder, amount) in self.pending_reserve_used_by.drain(..) {
+                    let share = self.reserve_shares.get(&funder).unwrap_or(0);
+                    let restored = share
+                        .checked_add(amount)
+                        .expect("Reserve share overflow while restoring failed payout");
+                    self.reserve_shares.insert(&funder, &restored);
+                }
                 self.payout_pending = false;
                 self.payout_complete = false;
             }
@@ -813,6 +942,18 @@ mod tests {
         circle
     }
 
+    fn completed_circle_with_reserve_funder() -> Circle {
+        let mut circle = sample_circle(CircleMode::ProtectedPublic);
+        context("sponsor.near", 2 * CONTRIBUTION);
+        circle.fund_protection();
+        complete_current_payout(&mut circle);
+        context("treasurer.near", 0);
+        circle.advance_round(NOW + 2_000_000_000);
+        complete_current_payout(&mut circle);
+        assert!(circle.is_circle_completed());
+        circle
+    }
+
     #[test]
     #[should_panic(expected = "Protection reserve is insufficient for the contribution shortfall")]
     fn protected_public_payout_pauses_when_reserve_cannot_cover_shortfall() {
@@ -981,6 +1122,57 @@ mod tests {
         let mut circle = completed_circle_with_funded_guarantee();
         context("treasurer.near", 0);
         circle.advance_round(NOW + 4_000_000_000);
+    }
+
+    #[test]
+    fn completed_circle_can_refund_unused_reserve_to_original_funder() {
+        let mut circle = completed_circle_with_reserve_funder();
+        assert_eq!(
+            circle.get_reserve_share(account("sponsor.near")),
+            U128(2 * CONTRIBUTION)
+        );
+        context("sponsor.near", 0);
+        let _ = circle.refund_protection();
+        assert_eq!(circle.get_reserve_share(account("sponsor.near")), U128(0));
+        assert_eq!(circle.get_protection_balance(), U128(0));
+
+        let callback_context = VMContextBuilder::new()
+            .current_account_id(account("circle.near"))
+            .predecessor_account_id(account("circle.near"))
+            .block_timestamp(NOW + 2_000_000_000)
+            .build();
+        testing_env_with_promise_results(callback_context, PromiseResult::Successful(Vec::new()));
+        circle.on_reserve_refund_complete(account("sponsor.near"), U128(2 * CONTRIBUTION));
+        assert_eq!(circle.get_reserve_share(account("sponsor.near")), U128(0));
+    }
+
+    #[test]
+    fn failed_reserve_refund_restores_funder_share_and_available_balance() {
+        let mut circle = completed_circle_with_reserve_funder();
+        context("sponsor.near", 0);
+        let _ = circle.refund_protection();
+        let callback_context = VMContextBuilder::new()
+            .current_account_id(account("circle.near"))
+            .predecessor_account_id(account("circle.near"))
+            .block_timestamp(NOW + 2_000_000_000)
+            .build();
+        testing_env_with_promise_results(callback_context, PromiseResult::Failed);
+        circle.on_reserve_refund_complete(account("sponsor.near"), U128(2 * CONTRIBUTION));
+        assert_eq!(
+            circle.get_reserve_share(account("sponsor.near")),
+            U128(2 * CONTRIBUTION)
+        );
+        assert_eq!(circle.get_protection_balance(), U128(2 * CONTRIBUTION));
+    }
+
+    #[test]
+    #[should_panic(expected = "Circle must be completed before reserve refunds")]
+    fn reserve_refund_is_blocked_until_circle_completion() {
+        let mut circle = sample_circle(CircleMode::ProtectedPublic);
+        context("sponsor.near", CONTRIBUTION);
+        circle.fund_protection();
+        context("sponsor.near", 0);
+        let _ = circle.refund_protection();
     }
 
     #[test]
