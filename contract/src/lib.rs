@@ -39,6 +39,7 @@ pub struct Guarantee {
     pub accepted: bool,
     pub active: bool,
     pub expiry: u64,
+    pub last_claimed_round: Option<u32>,
 }
 
 #[ext_contract(ext_self)]
@@ -192,6 +193,7 @@ impl Circle {
                 accepted: false,
                 active: false,
                 expiry,
+                last_claimed_round: None,
             },
         );
     }
@@ -244,6 +246,55 @@ impl Circle {
         );
         guarantee.locked_amount = deposit;
         guarantee.active = true;
+        self.guarantees.insert(&member, &guarantee);
+    }
+
+    /// Moves one missed contribution from locked collateral into the protection reserve.
+    /// This is permissionless but only possible after the deadline and for an objective shortfall.
+    pub fn claim_guarantee_for_missed_contribution(&mut self, member: AccountId) {
+        assert_eq!(
+            self.mode,
+            CircleMode::ProtectedPublic,
+            "Guarantee claims are only available for protected public circles"
+        );
+        assert!(
+            self.members.contains(&member),
+            "Account is not a circle member"
+        );
+        assert!(
+            env::block_timestamp() >= self.round_deadline,
+            "Guarantee claim is only allowed after the contribution deadline"
+        );
+        assert!(
+            self.contributions.get(&member).is_none(),
+            "Member has contributed this round"
+        );
+
+        let mut guarantee = self
+            .guarantees
+            .get(&member)
+            .expect("No guarantee exists for this member");
+        assert!(guarantee.active, "Guarantee is not active");
+        assert!(
+            env::block_timestamp() < guarantee.expiry,
+            "Guarantee has expired"
+        );
+        assert_ne!(
+            guarantee.last_claimed_round,
+            Some(self.current_round),
+            "Guarantee already claimed for this round"
+        );
+        assert!(
+            guarantee.locked_amount >= self.contribution_amount,
+            "Remaining guarantee collateral cannot cover one contribution"
+        );
+
+        guarantee.locked_amount -= self.contribution_amount;
+        guarantee.last_claimed_round = Some(self.current_round);
+        self.protection_balance = self
+            .protection_balance
+            .checked_add(self.contribution_amount)
+            .expect("Protection balance overflow while claiming guarantee");
         self.guarantees.insert(&member, &guarantee);
     }
 
@@ -522,6 +573,73 @@ mod tests {
         );
         context("bob.near", 0);
         circle.accept_guarantee(account("alice.near"));
+    }
+
+    #[test]
+    fn guarantee_claim_moves_one_missed_contribution_into_reserve() {
+        let mut circle = sample_circle(CircleMode::ProtectedPublic);
+        context("alice.near", 0);
+        circle.request_guarantee(
+            account("guarantor.near"),
+            U128(2 * CONTRIBUTION),
+            NOW + 2_000_000_000,
+        );
+        context("guarantor.near", 0);
+        circle.accept_guarantee(account("alice.near"));
+        context("guarantor.near", 2 * CONTRIBUTION);
+        circle.fund_guarantee(account("alice.near"));
+
+        context("bob.near", CONTRIBUTION);
+        circle.contribute();
+        context_at("anyone.near", 0, NOW + 1_000_000_000);
+        circle.claim_guarantee_for_missed_contribution(account("alice.near"));
+
+        let guarantee = circle.get_guarantee(account("alice.near")).unwrap();
+        assert_eq!(guarantee.locked_amount, CONTRIBUTION);
+        assert_eq!(guarantee.last_claimed_round, Some(0));
+        assert_eq!(circle.get_protection_balance(), U128(CONTRIBUTION));
+
+        context_at("treasurer.near", 0, NOW + 1_000_000_000);
+        let _ = circle.release_payout();
+        assert!(circle.is_payout_pending());
+        assert_eq!(circle.get_pending_protection_used(), U128(CONTRIBUTION));
+    }
+
+    #[test]
+    #[should_panic(expected = "Guarantee claim is only allowed after the contribution deadline")]
+    fn guarantee_claim_is_rejected_before_deadline() {
+        let mut circle = sample_circle(CircleMode::ProtectedPublic);
+        context("alice.near", 0);
+        circle.request_guarantee(
+            account("guarantor.near"),
+            U128(2 * CONTRIBUTION),
+            NOW + 2_000_000_000,
+        );
+        context("guarantor.near", 0);
+        circle.accept_guarantee(account("alice.near"));
+        context("guarantor.near", 2 * CONTRIBUTION);
+        circle.fund_guarantee(account("alice.near"));
+        context("anyone.near", 0);
+        circle.claim_guarantee_for_missed_contribution(account("alice.near"));
+    }
+
+    #[test]
+    #[should_panic(expected = "Guarantee already claimed for this round")]
+    fn guarantee_cannot_be_claimed_twice_in_one_round() {
+        let mut circle = sample_circle(CircleMode::ProtectedPublic);
+        context("alice.near", 0);
+        circle.request_guarantee(
+            account("guarantor.near"),
+            U128(2 * CONTRIBUTION),
+            NOW + 2_000_000_000,
+        );
+        context("guarantor.near", 0);
+        circle.accept_guarantee(account("alice.near"));
+        context("guarantor.near", 2 * CONTRIBUTION);
+        circle.fund_guarantee(account("alice.near"));
+        context_at("anyone.near", 0, NOW + 1_000_000_000);
+        circle.claim_guarantee_for_missed_contribution(account("alice.near"));
+        circle.claim_guarantee_for_missed_contribution(account("alice.near"));
     }
 
     #[test]
