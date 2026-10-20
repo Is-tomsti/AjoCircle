@@ -36,6 +36,7 @@ Load a trusted, internally consistent context snapshot for those exact identifie
 - Origin assets: `allowedOriginAssets`, an explicit allowlist of exact provider asset IDs
 - Refunds: `refundAddresses`, mapping each allowed asset ID to the member's registered source-chain refund address
 - Limits: `maxInputAmounts`, mapping each allowed asset ID to a positive integer string in that asset's base units
+- Timing: `roundDeadlineMs`, a positive safe-integer Unix timestamp in milliseconds from authoritative round state. Quote requests are rejected at or after this deadline, and the 1Click quote expiry is capped at the earlier of 15 minutes or the round deadline.
 
 The adapter returns only these documented fields and makes defensive copies of arrays/maps. Repository errors, missing context, and identifier mismatches fail closed. The quote service performs the final status, asset, wallet, amount, quote-output, and persistence checks.
 

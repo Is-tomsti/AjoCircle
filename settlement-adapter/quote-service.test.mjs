@@ -10,6 +10,7 @@ const trusted = {
   allowedOriginAssets: ['asset:usdc-base'],
   refundAddresses: { 'asset:usdc-base': '0xregistered-wallet' },
   maxInputAmounts: { 'asset:usdc-base': '5000000' },
+  roundDeadlineMs: 1900000000000,
 };
 const quote = {
   depositAddress: 'quote-deposit-1', depositMemo: 'memo-123', originAsset: 'asset:usdc-base',
@@ -51,6 +52,27 @@ test('rejects inactive state, unregistered wallet, unapproved asset, and excessi
   await assert.rejects(createTrustedMemberQuote(input), /not enabled/); input.store.close();
   input = args({ amount: '5000001' });
   await assert.rejects(createTrustedMemberQuote(input), /exceeds/); input.store.close();
+});
+
+test('rejects expired rounds before contacting the quote provider and caps quote expiry at the round deadline', async () => {
+  let called = false;
+  let input = args({
+    clock: () => new Date(trusted.roundDeadlineMs),
+    quoteClient: { async getQuote() { called = true; return quote; } },
+  });
+  await assert.rejects(createTrustedMemberQuote(input), /deadline has passed/);
+  assert.equal(called, false);
+  assert.equal(input.store.getIntent('intent-created-1'), null);
+  input.store.close();
+
+  let captured;
+  input = args({
+    clock: () => new Date(trusted.roundDeadlineMs - 60_000),
+    quoteClient: { async getQuote(request) { captured = request; return { ...quote, deadline: request.deadline }; } },
+  });
+  await createTrustedMemberQuote(input);
+  assert.equal(captured.deadline, new Date(trusted.roundDeadlineMs).toISOString());
+  input.store.close();
 });
 
 test('rejects quote output below contribution amount and mismatched trusted context', async () => {

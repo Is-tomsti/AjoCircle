@@ -46,7 +46,11 @@ export async function createTrustedMemberQuote({
   const memberNearAccount = requiredText(trusted.memberNearAccount, 'memberNearAccount');
   const now = clock();
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) throw new Error('clock must return a valid Date');
-  const deadline = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
+  if (!Number.isSafeInteger(trusted.roundDeadlineMs) || trusted.roundDeadlineMs <= 0) {
+    throw new Error('Trusted round deadline is required');
+  }
+  if (now.getTime() >= trusted.roundDeadlineMs) throw new Error('Round contribution deadline has passed');
+  const deadline = new Date(Math.min(now.getTime() + 15 * 60 * 1000, trusted.roundDeadlineMs)).toISOString();
   const request = buildMemberMediatedQuoteRequest({
     originAsset: asset,
     amount: inputAmount,

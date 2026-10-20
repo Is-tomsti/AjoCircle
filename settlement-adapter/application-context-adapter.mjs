@@ -1,6 +1,7 @@
 const REQUIRED_CONTEXT_FIELDS = [
   'circleStatus', 'memberStatus', 'roundStatus', 'memberNearAccount',
   'requiredContributionAmount', 'allowedOriginAssets', 'refundAddresses', 'maxInputAmounts',
+  'roundDeadlineMs',
 ];
 
 function nonEmptyText(value) {
@@ -61,6 +62,7 @@ export function createApplicationContextResolvers({ repository, getPrincipalId }
     if (!context || context.circleId !== circleId.trim()
         || context.memberId !== memberId.trim() || context.round !== round) return null;
     if (REQUIRED_CONTEXT_FIELDS.some(field => !Object.hasOwn(context, field))) return null;
+    if (!Number.isSafeInteger(context.roundDeadlineMs) || context.roundDeadlineMs <= 0) return null;
 
     // Return only the quote service's documented trusted fields, never arbitrary
     // repository properties or caller-controlled values.
@@ -78,6 +80,7 @@ export function createApplicationContextResolvers({ repository, getPrincipalId }
         ? { ...context.refundAddresses } : context.refundAddresses,
       maxInputAmounts: context.maxInputAmounts && typeof context.maxInputAmounts === 'object'
         ? { ...context.maxInputAmounts } : context.maxInputAmounts,
+      roundDeadlineMs: context.roundDeadlineMs,
     });
   }
 

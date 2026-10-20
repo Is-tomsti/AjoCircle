@@ -21,7 +21,7 @@ The client must not send `memberId` or `refundTo`; requests containing unsupport
 - `resolveMemberIdentity({ principal, circleId })` must use that authenticated principal and authoritative application records to return the member ID for the specified circle, or a falsy value when the principal is not a member.
 - `resolveTrustedContext({ circleId, memberId, round })` must load authoritative circle, membership, round, NEAR account, registered source-chain refund wallet(s), supported origin assets, contribution amount, and per-asset input limits. It must return the matching IDs and expected statuses documented in `quote-service.mjs`.
 
-All three callbacks are mandatory at handler construction. The handler authenticates before parsing a request body, derives the member identity server-side, gets the refund address from trusted context, then delegates validation and durable intent creation to `createTrustedMemberQuote`. Do not mount the endpoint until these callbacks are connected to real production-grade auth and authoritative storage.
+All three callbacks are mandatory at handler construction. The handler authenticates before parsing a request body, derives the member identity server-side, gets the refund address from trusted context, then delegates validation and durable intent creation to `createTrustedMemberQuote`. The trusted context must include the authoritative `roundDeadlineMs`; requests at or after that deadline are rejected, and quote expiry cannot extend beyond it. Do not mount the endpoint until these callbacks are connected to real production-grade auth and authoritative storage.
 
 ## Responses and limits
 

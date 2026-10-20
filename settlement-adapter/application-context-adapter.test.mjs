@@ -14,6 +14,7 @@ const context = {
   allowedOriginAssets: ['asset:usdc-base'],
   refundAddresses: { 'asset:usdc-base': '0xregistered' },
   maxInputAmounts: { 'asset:usdc-base': '5000000' },
+  roundDeadlineMs: 1900000000000,
   internalDatabaseRowId: 'must-not-escape',
 };
 
@@ -106,7 +107,9 @@ test('fails closed when trusted context is missing, mismatched, incomplete, or u
     { ...context, circleId: 'other-circle' },
     { ...context, memberId: 'other-member' },
     { ...context, round: 4 },
+    { ...context, roundDeadlineMs: '1900000000000' },
     (() => { const { maxInputAmounts, ...partial } = context; return partial; })(),
+    (() => { const { roundDeadlineMs, ...partial } = context; return partial; })(),
   ]) {
     const { resolvers } = setup({ repository: {
       async getMemberQuoteContext() { return returned; },

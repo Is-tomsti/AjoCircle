@@ -10,6 +10,7 @@ const trusted = {
   allowedOriginAssets: ['asset:usdc-base'],
   refundAddresses: { 'asset:usdc-base': '0xregistered-wallet' },
   maxInputAmounts: { 'asset:usdc-base': '5000000' },
+  roundDeadlineMs: 1900000000000,
 };
 const quote = {
   depositAddress: 'quote-deposit-1', originAsset: 'asset:usdc-base', destinationAsset: 'nep141:wrap.near',
