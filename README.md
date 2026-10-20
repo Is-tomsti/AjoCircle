@@ -14,17 +14,19 @@ Ajo Circle is under active development. The current contract is an initial proto
 
 - Create a circle with a fixed member list, contribution amount, payout order, deadline, and treasurer account.
 - Accept one exact-size NEAR deposit from each member per round before the deadline.
+- Support `Private` and `ProtectedPublic` circle modes.
+- In `ProtectedPublic` mode, require a separately tracked protection balance at least equal to the full scheduled pot before a payout can start. Protection deposits cannot be counted as member contributions.
 - Restrict payout initiation and round advancement to the configured treasurer account.
 - Mark a payout complete only after its transfer callback reports success.
-- Expose basic round and contribution views.
+- Expose basic round, contribution, mode, and protection-balance views.
 
 ### Planned work
 
-1. Establish a reproducible contract build and test suite.
-2. Add an explicit payout safety gate for secured collateral, reserves, and remaining member obligations.
+1. Contract test suite and reproducible WASM release build are passing locally.
+2. Complete the protection design: define verified shortfall claims, reserve usage/replenishment, and safe deposit release; test defaults, failed transfers, and round transitions.
 3. Design the NEAR Intents settlement adapter so a cross-chain contribution is credited only after settlement is independently verified.
-4. Add the treasurer agent with narrowly scoped permissions and auditable decisions.
-5. Build the member dashboard, deployment instructions, and test scenarios.
+4. Persist verified reputation events on-chain and connect the deterministic scoring rules to those events.
+5. Add the treasurer agent with narrowly scoped permissions and auditable decisions, then build the member dashboard and deployment scenarios.
 
 ## Safety principles
 

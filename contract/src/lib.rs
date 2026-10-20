@@ -1,6 +1,7 @@
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LookupMap;
 use near_sdk::json_types::U128;
+use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::BorshStorageKey;
 use near_sdk::{
     env, ext_contract, near_bindgen, AccountId, Gas, NearToken, PanicOnDefault, Promise,
@@ -10,6 +11,16 @@ use near_sdk::{
 mod reputation;
 
 const CALLBACK_GAS: Gas = Gas::from_tgas(5);
+
+#[derive(
+    BorshDeserialize, BorshSerialize, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize,
+)]
+#[borsh(crate = "near_sdk::borsh")]
+#[serde(crate = "near_sdk::serde")]
+pub enum CircleMode {
+    Private,
+    ProtectedPublic,
+}
 
 #[derive(BorshSerialize, BorshDeserialize, BorshStorageKey)]
 #[borsh(crate = "near_sdk::borsh")]
@@ -33,6 +44,8 @@ pub struct Circle {
     round_deadline: u64,
     contributions: LookupMap<AccountId, u128>,
     treasurer_agent: AccountId,
+    mode: CircleMode,
+    protection_balance: u128,
     payout_pending: bool,
     payout_complete: bool,
 }
@@ -46,6 +59,7 @@ impl Circle {
         payout_order: Vec<AccountId>,
         round_deadline: u64,
         treasurer_agent: AccountId,
+        mode: CircleMode,
     ) -> Self {
         assert!(!members.is_empty(), "Circle must have at least one member");
         assert!(
@@ -84,6 +98,8 @@ impl Circle {
             round_deadline,
             contributions: LookupMap::new(StorageKey::Contributions),
             treasurer_agent,
+            mode,
+            protection_balance: 0,
             payout_pending: false,
             payout_complete: false,
         }
@@ -117,6 +133,22 @@ impl Circle {
             .insert(&member, &self.contribution_amount);
     }
 
+    /// Adds separately accounted protection funds, never counted as contributions.
+    #[payable]
+    pub fn fund_protection(&mut self) {
+        assert_eq!(
+            self.mode,
+            CircleMode::ProtectedPublic,
+            "Protection funding is only available for protected public circles"
+        );
+        let deposit = env::attached_deposit().as_yoctonear();
+        assert!(deposit > 0, "Protection deposit must be positive");
+        self.protection_balance = self
+            .protection_balance
+            .checked_add(deposit)
+            .expect("Protection balance overflow");
+    }
+
     pub fn release_payout(&mut self) -> Promise {
         self.assert_treasurer();
         assert!(
@@ -135,6 +167,9 @@ impl Circle {
             .contribution_amount
             .checked_mul(self.members.len() as u128)
             .expect("Pot amount overflow");
+        if self.mode == CircleMode::ProtectedPublic {
+            assert!(self.protection_balance >= pot, "Protected public payout requires a separate protection balance covering the full pot");
+        }
         self.payout_pending = true;
 
         Promise::new(recipient)
@@ -197,6 +232,27 @@ impl Circle {
     pub fn get_current_recipient(&self) -> AccountId {
         self.payout_order[(self.current_round as usize) % self.payout_order.len()].clone()
     }
+    pub fn get_mode(&self) -> CircleMode {
+        self.mode
+    }
+
+    pub fn get_protection_balance(&self) -> U128 {
+        U128(self.protection_balance)
+    }
+
+    /// Protected public circles require protection equal to the entire scheduled pot.
+    pub fn get_required_protection(&self) -> U128 {
+        if self.mode == CircleMode::ProtectedPublic {
+            U128(
+                self.contribution_amount
+                    .checked_mul(self.members.len() as u128)
+                    .expect("Pot amount overflow"),
+            )
+        } else {
+            U128(0)
+        }
+    }
+
     pub fn is_payout_pending(&self) -> bool {
         self.payout_pending
     }
@@ -243,7 +299,7 @@ mod tests {
         testing_env!(builder.build());
     }
 
-    fn sample_circle() -> Circle {
+    fn sample_circle(mode: CircleMode) -> Circle {
         context("treasurer.near", 0);
         Circle::new(
             vec![account("alice.near"), account("bob.near")],
@@ -251,12 +307,13 @@ mod tests {
             vec![account("alice.near"), account("bob.near")],
             NOW + 1_000_000_000,
             account("treasurer.near"),
+            mode,
         )
     }
 
     #[test]
     fn accepts_exact_member_contribution_once() {
-        let mut circle = sample_circle();
+        let mut circle = sample_circle(CircleMode::Private);
         context("alice.near", CONTRIBUTION);
         circle.contribute();
         assert_eq!(circle.get_contribution_count(), 1);
@@ -269,7 +326,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Attached deposit must equal the contribution amount")]
     fn rejects_wrong_contribution_amount() {
-        let mut circle = sample_circle();
+        let mut circle = sample_circle(CircleMode::Private);
         context("alice.near", CONTRIBUTION - 1);
         circle.contribute();
     }
@@ -277,7 +334,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Caller is not a circle member")]
     fn rejects_non_member_contribution() {
-        let mut circle = sample_circle();
+        let mut circle = sample_circle(CircleMode::Private);
         context("outsider.near", CONTRIBUTION);
         circle.contribute();
     }
@@ -285,17 +342,73 @@ mod tests {
     #[test]
     #[should_panic(expected = "Member already contributed this round")]
     fn rejects_duplicate_contribution() {
-        let mut circle = sample_circle();
+        let mut circle = sample_circle(CircleMode::Private);
         context("alice.near", CONTRIBUTION);
         circle.contribute();
         context("alice.near", CONTRIBUTION);
         circle.contribute();
     }
 
+    fn contribute_all_members(circle: &mut Circle) {
+        context("alice.near", CONTRIBUTION);
+        circle.contribute();
+        context("bob.near", CONTRIBUTION);
+        circle.contribute();
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Protected public payout requires a separate protection balance covering the full pot"
+    )]
+    fn protected_public_payout_is_blocked_without_full_protection() {
+        let mut circle = sample_circle(CircleMode::ProtectedPublic);
+        contribute_all_members(&mut circle);
+        context("treasurer.near", 0);
+        let _ = circle.release_payout();
+    }
+
+    #[test]
+    fn protected_public_payout_requires_and_accepts_full_separate_protection() {
+        let mut circle = sample_circle(CircleMode::ProtectedPublic);
+        context("sponsor.near", CONTRIBUTION * 2);
+        circle.fund_protection();
+        assert_eq!(circle.get_protection_balance(), U128(CONTRIBUTION * 2));
+        assert_eq!(circle.get_required_protection(), U128(CONTRIBUTION * 2));
+        contribute_all_members(&mut circle);
+        context("treasurer.near", 0);
+        let _ = circle.release_payout();
+        assert!(circle.is_payout_pending());
+    }
+
+    #[test]
+    fn private_circle_can_pay_without_protection() {
+        let mut circle = sample_circle(CircleMode::Private);
+        contribute_all_members(&mut circle);
+        context("treasurer.near", 0);
+        let _ = circle.release_payout();
+        assert!(circle.is_payout_pending());
+        assert_eq!(circle.get_required_protection(), U128(0));
+    }
+
+    #[test]
+    #[should_panic(expected = "Protection funding is only available for protected public circles")]
+    fn private_circle_cannot_accept_protection_deposit() {
+        let mut circle = sample_circle(CircleMode::Private);
+        context("sponsor.near", CONTRIBUTION);
+        circle.fund_protection();
+    }
+
+    #[test]
+    #[should_panic(expected = "Protection deposit must be positive")]
+    fn rejects_zero_protection_deposit() {
+        let mut circle = sample_circle(CircleMode::ProtectedPublic);
+        context("sponsor.near", 0);
+        circle.fund_protection();
+    }
     #[test]
     #[should_panic(expected = "Only the treasurer agent may call this method")]
     fn rejects_unauthorized_payout() {
-        let mut circle = sample_circle();
+        let mut circle = sample_circle(CircleMode::Private);
         context("outsider.near", 0);
         let _ = circle.release_payout();
     }
