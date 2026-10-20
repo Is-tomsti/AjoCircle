@@ -16,6 +16,8 @@ Ajo Circle is under active development. The current contract is an initial proto
 - Accept one exact-size NEAR deposit from each member per round before the deadline.
 - Support `Private` and `ProtectedPublic` circle modes.
 - In `ProtectedPublic` mode, track protection funds separately from member contributions.
+- Let a member request a full-pot guarantor commitment; only the nominated guarantor can accept, and activation requires the exact full-pot amount to be deposited into contract custody.
+- Expose the guarantor request, acceptance, locked amount, expiry, and activation status. This is currently only the request/accept/deposit foundation; active guarantees do not yet authorize shortfall claims or have a safe collateral-release path.
 - Permit a protected public payout to cover missing contributions only after the deadline and only when the reserve covers the exact shortfall; otherwise the payout pauses.
 - Reserve the shortfall while a payout is pending, keep the deduction after success, and restore it if the transfer callback reports failure.
 - Restrict payout initiation and round advancement to the configured treasurer account.

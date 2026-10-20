@@ -26,6 +26,19 @@ pub enum CircleMode {
 #[borsh(crate = "near_sdk::borsh")]
 enum StorageKey {
     Contributions,
+    Guarantees,
+}
+
+#[derive(BorshDeserialize, BorshSerialize, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[borsh(crate = "near_sdk::borsh")]
+#[serde(crate = "near_sdk::serde")]
+pub struct Guarantee {
+    pub guarantor: AccountId,
+    pub required_amount: u128,
+    pub locked_amount: u128,
+    pub accepted: bool,
+    pub active: bool,
+    pub expiry: u64,
 }
 
 #[ext_contract(ext_self)]
@@ -43,6 +56,7 @@ pub struct Circle {
     current_round: u32,
     round_deadline: u64,
     contributions: LookupMap<AccountId, u128>,
+    guarantees: LookupMap<AccountId, Guarantee>,
     treasurer_agent: AccountId,
     mode: CircleMode,
     protection_balance: u128,
@@ -98,6 +112,7 @@ impl Circle {
             current_round: 0,
             round_deadline,
             contributions: LookupMap::new(StorageKey::Contributions),
+            guarantees: LookupMap::new(StorageKey::Guarantees),
             treasurer_agent,
             mode,
             protection_balance: 0,
@@ -133,6 +148,107 @@ impl Circle {
         );
         self.contributions
             .insert(&member, &self.contribution_amount);
+    }
+
+    /// A member proposes a full-pot guarantee. The guarantor must accept and fund it separately.
+    pub fn request_guarantee(&mut self, guarantor: AccountId, required_amount: U128, expiry: u64) {
+        assert_eq!(
+            self.mode,
+            CircleMode::ProtectedPublic,
+            "Guarantors are only available for protected public circles"
+        );
+        let member = env::predecessor_account_id();
+        assert!(
+            self.members.contains(&member),
+            "Caller is not a circle member"
+        );
+        assert_ne!(guarantor, member, "A member cannot guarantee themselves");
+        assert!(
+            self.guarantees.get(&member).is_none(),
+            "A guarantee already exists for this member"
+        );
+        let total_pot = self
+            .contribution_amount
+            .checked_mul(self.members.len() as u128)
+            .expect("Pot amount overflow");
+        assert_eq!(
+            required_amount.0, total_pot,
+            "Guarantee must cover the full scheduled pot"
+        );
+        assert!(
+            expiry > self.round_deadline,
+            "Guarantee expiry must be after the current contribution deadline"
+        );
+        assert!(
+            expiry > env::block_timestamp(),
+            "Guarantee expiry must be in the future"
+        );
+        self.guarantees.insert(
+            &member,
+            &Guarantee {
+                guarantor,
+                required_amount: required_amount.0,
+                locked_amount: 0,
+                accepted: false,
+                active: false,
+                expiry,
+            },
+        );
+    }
+
+    /// Only the nominated guarantor may accept the exact stored terms.
+    pub fn accept_guarantee(&mut self, member: AccountId) {
+        let mut guarantee = self
+            .guarantees
+            .get(&member)
+            .expect("No guarantee request exists");
+        assert_eq!(
+            env::predecessor_account_id(),
+            guarantee.guarantor,
+            "Only the nominated guarantor may accept"
+        );
+        assert!(
+            !guarantee.accepted && !guarantee.active,
+            "Guarantee is already accepted or active"
+        );
+        assert!(
+            env::block_timestamp() < guarantee.expiry,
+            "Guarantee request has expired"
+        );
+        guarantee.accepted = true;
+        self.guarantees.insert(&member, &guarantee);
+    }
+
+    /// The nominated guarantor locks the full agreed amount in contract custody.
+    #[payable]
+    pub fn fund_guarantee(&mut self, member: AccountId) {
+        let mut guarantee = self
+            .guarantees
+            .get(&member)
+            .expect("No guarantee request exists");
+        assert_eq!(
+            env::predecessor_account_id(),
+            guarantee.guarantor,
+            "Only the nominated guarantor may fund this guarantee"
+        );
+        assert!(guarantee.accepted, "Guarantor must accept before funding");
+        assert!(!guarantee.active, "Guarantee is already active");
+        assert!(
+            env::block_timestamp() < guarantee.expiry,
+            "Guarantee request has expired"
+        );
+        let deposit = env::attached_deposit().as_yoctonear();
+        assert_eq!(
+            deposit, guarantee.required_amount,
+            "Deposit must equal the full guarantee amount"
+        );
+        guarantee.locked_amount = deposit;
+        guarantee.active = true;
+        self.guarantees.insert(&member, &guarantee);
+    }
+
+    pub fn get_guarantee(&self, member: AccountId) -> Option<Guarantee> {
+        self.guarantees.get(&member)
     }
 
     /// Adds separately accounted protection funds, never counted as contributions.
@@ -344,6 +460,68 @@ mod tests {
             account("treasurer.near"),
             mode,
         )
+    }
+
+    #[test]
+    fn guarantor_must_accept_and_lock_the_full_pot() {
+        let mut circle = sample_circle(CircleMode::ProtectedPublic);
+        context("alice.near", 0);
+        circle.request_guarantee(
+            account("guarantor.near"),
+            U128(2 * CONTRIBUTION),
+            NOW + 2_000_000_000,
+        );
+        let requested = circle.get_guarantee(account("alice.near")).unwrap();
+        assert!(!requested.accepted);
+        assert!(!requested.active);
+        assert_eq!(requested.locked_amount, 0);
+
+        context("guarantor.near", 0);
+        circle.accept_guarantee(account("alice.near"));
+        assert!(
+            circle
+                .get_guarantee(account("alice.near"))
+                .unwrap()
+                .accepted
+        );
+
+        context("guarantor.near", 2 * CONTRIBUTION);
+        circle.fund_guarantee(account("alice.near"));
+        let active = circle.get_guarantee(account("alice.near")).unwrap();
+        assert!(active.accepted);
+        assert!(active.active);
+        assert_eq!(active.locked_amount, 2 * CONTRIBUTION);
+        assert_eq!(active.required_amount, 2 * CONTRIBUTION);
+    }
+
+    #[test]
+    #[should_panic(expected = "Deposit must equal the full guarantee amount")]
+    fn guarantor_cannot_activate_with_underfunded_deposit() {
+        let mut circle = sample_circle(CircleMode::ProtectedPublic);
+        context("alice.near", 0);
+        circle.request_guarantee(
+            account("guarantor.near"),
+            U128(2 * CONTRIBUTION),
+            NOW + 2_000_000_000,
+        );
+        context("guarantor.near", 0);
+        circle.accept_guarantee(account("alice.near"));
+        context("guarantor.near", CONTRIBUTION);
+        circle.fund_guarantee(account("alice.near"));
+    }
+
+    #[test]
+    #[should_panic(expected = "Only the nominated guarantor may accept")]
+    fn only_nominated_guarantor_can_accept() {
+        let mut circle = sample_circle(CircleMode::ProtectedPublic);
+        context("alice.near", 0);
+        circle.request_guarantee(
+            account("guarantor.near"),
+            U128(2 * CONTRIBUTION),
+            NOW + 2_000_000_000,
+        );
+        context("bob.near", 0);
+        circle.accept_guarantee(account("alice.near"));
     }
 
     #[test]
