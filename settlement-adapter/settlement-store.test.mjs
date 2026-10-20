@@ -132,3 +132,26 @@ test('does not accept an unsuccessful status as a verified delivery', () => {
   assert.equal(store.getIntent('intent-001').status, 'PENDING');
   store.close();
 });
+
+test('independent SQLite connections cannot consume the same intent twice', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'ajocircle-multi-connection-'));
+  const path = join(directory, 'settlement.sqlite');
+  const first = new SettlementStore({ path, clock: tick });
+  const second = new SettlementStore({ path, clock: tick });
+  try {
+    first.createPendingIntent(intent());
+    const observed = parseOneClickStatus(payload());
+    const outcomes = await Promise.allSettled([
+      Promise.resolve().then(() => first.claimVerifiedDelivery('intent-001', observed)),
+      Promise.resolve().then(() => second.claimVerifiedDelivery('intent-001', observed)),
+    ]);
+    assert.equal(outcomes.filter((result) => result.status === 'fulfilled').length, 1);
+    assert.equal(outcomes.filter((result) => result.status === 'rejected').length, 1);
+    assert.equal(first.getIntent('intent-001').status, 'VERIFIED_DELIVERY');
+    assert.deepEqual(first.getIntent('intent-001').destinationTxHashes, ['tx-destination-001']);
+  } finally {
+    first.close();
+    second.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
