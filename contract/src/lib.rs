@@ -88,6 +88,12 @@ impl Circle {
         treasurer_agent: AccountId,
         mode: CircleMode,
     ) -> Self {
+        assert!(!env::state_exists(), "Contract is already initialized");
+        assert_eq!(
+            env::predecessor_account_id(),
+            env::current_account_id(),
+            "Only the contract account may initialize this circle"
+        );
         assert!(!members.is_empty(), "Circle must have at least one member");
         assert!(
             contribution_amount.0 > 0,
@@ -722,7 +728,7 @@ mod tests {
     }
 
     fn sample_circle(mode: CircleMode) -> Circle {
-        context("treasurer.near", 0);
+        context("circle.near", 0);
         Circle::new(
             vec![account("alice.near"), account("bob.near")],
             U128(CONTRIBUTION),
@@ -731,6 +737,35 @@ mod tests {
             account("treasurer.near"),
             mode,
         )
+    }
+
+    #[test]
+    #[should_panic(expected = "Only the contract account may initialize this circle")]
+    fn rejects_external_initializer() {
+        context("outsider.near", 0);
+        let _ = Circle::new(
+            vec![account("alice.near")],
+            U128(CONTRIBUTION),
+            vec![account("alice.near")],
+            NOW + 1_000_000_000,
+            account("treasurer.near"),
+            CircleMode::Private,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Contract is already initialized")]
+    fn rejects_second_initialization() {
+        let existing = sample_circle(CircleMode::Private);
+        env::state_write(&existing);
+        let _ = Circle::new(
+            vec![account("alice.near")],
+            U128(CONTRIBUTION),
+            vec![account("alice.near")],
+            NOW + 1_000_000_000,
+            account("treasurer.near"),
+            CircleMode::Private,
+        );
     }
 
     #[test]
@@ -935,6 +970,28 @@ mod tests {
 
         complete_current_payout(&mut circle);
         assert!(!circle.is_circle_completed());
+        context("treasurer.near", 0);
+        circle.advance_round(NOW + 2_000_000_000);
+        complete_current_payout(&mut circle);
+        assert!(circle.is_circle_completed());
+        circle
+    }
+
+    fn completed_circle_with_guarantee_and_reserve_funder() -> Circle {
+        let mut circle = sample_circle(CircleMode::ProtectedPublic);
+        context("alice.near", 0);
+        circle.request_guarantee(
+            account("guarantor.near"),
+            U128(2 * CONTRIBUTION),
+            NOW + 3_000_000_000,
+        );
+        context("guarantor.near", 0);
+        circle.accept_guarantee(account("alice.near"));
+        context("guarantor.near", 2 * CONTRIBUTION);
+        circle.fund_guarantee(account("alice.near"));
+        context("sponsor.near", 2 * CONTRIBUTION);
+        circle.fund_protection();
+        complete_current_payout(&mut circle);
         context("treasurer.near", 0);
         circle.advance_round(NOW + 2_000_000_000);
         complete_current_payout(&mut circle);
@@ -1173,6 +1230,37 @@ mod tests {
         circle.fund_protection();
         context("sponsor.near", 0);
         let _ = circle.refund_protection();
+    }
+
+    #[test]
+    #[should_panic(expected = "Payout is already pending or complete")]
+    fn payout_cannot_be_released_twice_while_transfer_is_pending() {
+        let mut circle = sample_circle(CircleMode::Private);
+        contribute_all_members(&mut circle);
+        context("treasurer.near", 0);
+        let _ = circle.release_payout();
+        assert!(circle.is_payout_pending());
+        let _ = circle.release_payout();
+    }
+
+    #[test]
+    #[should_panic(expected = "A collateral release is pending")]
+    fn reserve_refund_cannot_overlap_pending_guarantee_release() {
+        let mut circle = completed_circle_with_guarantee_and_reserve_funder();
+        context("anyone.near", 0);
+        let _ = circle.release_guarantee(account("alice.near"));
+        context("sponsor.near", 0);
+        let _ = circle.refund_protection();
+    }
+
+    #[test]
+    #[should_panic(expected = "A reserve refund is pending")]
+    fn guarantee_release_cannot_overlap_pending_reserve_refund() {
+        let mut circle = completed_circle_with_guarantee_and_reserve_funder();
+        context("sponsor.near", 0);
+        let _ = circle.refund_protection();
+        context("anyone.near", 0);
+        let _ = circle.release_guarantee(account("alice.near"));
     }
 
     #[test]

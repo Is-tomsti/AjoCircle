@@ -28,6 +28,27 @@ Ajo Circle is under active development. The current contract is an initial proto
 - Mark a payout complete only after its transfer callback reports success.
 - Expose round, contribution, mode, circle-completion status, current shortfall requirement, protection balance, and pending reserve-use views.
 
+## Testnet deployment and demo boundary
+
+- The contract was previously deployed to NEAR **testnet** at `ajocircle.testnet` (deployment transaction: `8H7VUVR3grQshyfGK8oyrx52MCZu3yt7DtXhgwsYfdK1`). The deployed code matched the previously built WASM artifact at the time it was checked.
+- The deployed artifact predates the initializer-hardening changes now being prepared in source. Do **not** initialize the currently deployed instance. The hardened WASM has not been redeployed, and no initialization or demo funds have been sent as part of this work.
+- The intended safe path is to run the complete tests, build the WASM, review the artifact, and only then use NEAR CLI's `contract deploy use-file ... with-init-call new ...` flow to submit deployment plus initialization in one transaction. The transaction must be signed by `ajocircle.testnet`'s own authorized account key so `predecessor_account_id == current_account_id`; do not use an outsider signer. This is documentation of the mechanism, not authorization to execute it.
+- The proposed members and payout order are `ajotest1.testnet`, `ajotest2.testnet`, and `ajotest3.testnet`. Verify that all three accounts exist and have sufficient NEAR for their 1 NEAR contribution plus gas. The constructor requires unique members, a one-to-one payout order containing those members, a positive contribution, and a deadline in the future. `round_deadline` is an absolute block timestamp in nanoseconds, not a duration; for round 1, calculate the 15-minute deadline as a fresh latest block timestamp plus `900_000_000_000` nanoseconds immediately before the combined deploy-and-init transaction, then submit promptly. Later deadlines may be shortened by the treasurer.
+- Proposed demo contribution: `1 NEAR` per member per round (`10^24` yoctoNEAR). The contract accepts native NEAR deposits, not stablecoin-denominated contributions. The fiat value of a contribution and pot changes with NEAR's market price; collateral ratios measured in NEAR do not promise a stable USD value. Do not claim stable-dollar protection. A fungible-token contribution path and any swap/Intents flow are future work, not implemented by this contract.
+- The selected mode is `ProtectedPublic`, so reserve funding and guarantee claims are available subject to the contract rules. The first demo uses the reserve route, not guarantees. If a later demo uses a guarantee, the contract requires `3 NEAR` of locked collateral per guaranteed member for a three-member circle contributing `1 NEAR` each; this is separate from the member contribution pot. No guarantee is automatic just because a deadline passes.
+
+## First testnet demo plan
+
+- Use the reserve route first; do not start the guarantee route in this run. With three members contributing 1 NEAR each, a single missed contribution requires at least `1 NEAR` in protection reserve to cover the shortfall. Reserve funding is separate from member contributions and must be explicitly authorized and sent by its funder.
+- Planned defaulter: `ajotest3.testnet`. Planned first payout recipient: `ajotest1.testnet`. The intended scenario is that members 1 and 2 contribute 1 NEAR, member 3 misses the deadline, the reserve covers the 1 NEAR shortfall, and the treasurer releases the 3 NEAR pot to member 1. No funding or transactions are authorized by this plan.
+
+## Trusted-operator and key-recovery disclosures
+
+- The configured treasurer agent can trigger `release_payout` and `advance_round`; `advance_round` accepts a new future deadline, so the treasurer can change round deadlines within contract rules.
+- The selected treasurer ID `ajocircle.testnet` is the same account as the contract account. This is intentional for the current **single-operator prototype**, not a neutral or independent treasurer design: the same account key can upgrade the contract and trigger payouts/advance rounds. Keep this limitation visible in demos and documentation.
+- The full-access key can authorize contract upgrades and other account actions allowed by NEAR. Keep it for now so recovery/upgrades remain possible. Restrict who can access it, never commit or paste key material, and document a recovery owner, secure backup location, rotation procedure, and explicit approval requirement for upgrades. Do not delete or rotate it until an independently tested upgrade/recovery path is agreed. A later locked-contract demo should happen only after the contract is stable and the loss of upgrade/recovery ability is understood.
+- The contract remains an unaudited prototype for testnet demonstration only. Do not use real funds or describe native-NEAR amounts as dollar guarantees.
+
 ### Planned work
 
 1. Contract tests currently pass locally; re-run the WASM release build after each contract change.
@@ -48,7 +69,7 @@ Ajo Circle is under active development. The current contract is an initial proto
 
 The NEAR smart contract is in [`contract/`](contract/). Follow the Rust and NEAR SDK versions in `contract/Cargo.toml` when setting up the build environment.
 
-Before deploying, run the contract tests, review the payout and callback logic, and obtain an independent security review. Deployment and cross-chain settlement integration are not yet complete.
+Before any redeployment, run the contract tests, review the payout and callback logic, and obtain an independent security review. The hardened testnet redeployment/initialization and cross-chain settlement integration are not yet complete.
 
 ## License
 
