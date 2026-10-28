@@ -54,10 +54,12 @@ The `accountSuspensionRepository` above is an application-provided trusted serve
 - Current signature verifier supports **Ed25519 FullAccess keys only** and deliberately rejects other key types or function-call keys.
 - RPC key membership is checked against the configured network. Never mix mainnet and testnet RPCs for the same auth deployment.
 - Challenge nonces are stored hashed and atomically consumed; SQLite must be durable and shared by all app instances for replay prevention to work across instances. Use a single shared durable database or a transactional shared store for multi-instance deployment.
-- The sample HTTP handler has no built-in distributed rate limiter. Add rate limiting, monitoring, abuse controls, TLS, and deployment-specific origin/CSRF protections before public exposure.
+- The HTTP handler applies an in-memory limit of 10 challenge requests per remote IP per 60 seconds and returns `429 CHALLENGE_RATE_LIMITED`. This is per process, not distributed; configure trusted-proxy IP handling and a shared rate limiter before multi-instance/public production use. Do not trust arbitrary `X-Forwarded-For` values.
+- `NearWalletAuthStore.deleteExpiredChallenges(atMs)` removes expired challenge rows. The loopback-only `near-wallet-auth-testnet-server.mjs` runs this cleanup every 60 seconds. Production must run monitored cleanup as a scheduled task and alert on failures.
+- Add monitoring, abuse controls, TLS, and deployment-specific origin/CSRF protections before public exposure.
 - The bearer token is returned in the response. The frontend must keep it out of URLs, logs, analytics, and unsafe persistent browser storage; prefer an appropriately configured HttpOnly Secure cookie if the deployed app's session architecture supports it.
 - Add key rotation, explicit logout/revocation policy, and robust suspension repository semantics before production. The current verifier checks the account suspension callback on each bearer verification, but does not maintain a general per-token revocation list.
-- The server does not yet include a wallet-selection frontend. A wallet must support NEP-413 `signMessage`; unsupported wallets should show a clear fallback rather than pretending sign-in succeeded.
+- A testnet wallet-selection frontend now lives in `web/` and uses HOT Connect's manifest feature filter for `signMessage`, `signInAndSignMessage`, and `testnet`. This frontend has not yet passed real-wallet interoperability tests; unsupported wallets must show a clear fallback rather than pretending sign-in succeeded.
 - Tests generate local ephemeral Ed25519 keys and mock NEAR RPC. They validate implementation behavior but do not replace testnet wallet interoperability testing.
 - No private wallet key is requested, stored, or sent to the server. No transaction is submitted by sign-in.
 

@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  node-tests:
+    name: Settlement adapter tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Run Node tests
+        run: node --test settlement-adapter/*.test.mjs
+
+  rust-tests:
+    name: Rust contract and adapter tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Test NEAR contract
+        run: cargo test --manifest-path contract/Cargo.toml
+      - name: Build release NEAR WASM
+        run: cargo build --manifest-path contract/Cargo.toml --target wasm32-unknown-unknown --release
+      - name: Test Rust settlement adapter
+        run: cargo test --manifest-path settlement-adapter/Cargo.toml
+
+  frontend-build:
+    name: Frontend production build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install locked frontend dependencies
+        working-directory: web
+        run: npm ci
+      - name: Build frontend
+        working-directory: web
+        run: npm run build

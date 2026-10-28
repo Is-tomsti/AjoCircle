@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { requestLiveOneClickPreview } from './live-preview-runner.mjs';
+const base = { recipient: 'public-mainnet.near', refundTo: 'public-mainnet.near', deadline: '2026-10-28T10:00:00Z' };
+test('live preview runner issues only a dry request and returns a safe market estimate', async () => {
+ let captured; const result = await requestLiveOneClickPreview({ ...base, quoteClient: { async getQuotePreview(request) { captured=request; return { originAsset:request.originAsset,destinationAsset:request.destinationAsset,recipient:request.recipient,amountIn:request.amount,amountOut:'123',amountOutFormatted:'0.000000000000000000000123',minimumAmountOut:'100',amountOutUsd:'1.00',timeEstimate:9,correlationId:'live-dry-test',depositAddress:'must-be-stripped',depositMemo:'must-be-stripped',signature:'must-be-stripped' }; } } });
+ assert.equal(captured.dry,true); assert.equal(captured.amount,'1000000'); assert.equal(captured.recipient,base.recipient); assert.equal(captured.refundTo,base.refundTo); assert.equal(result.status,'LIVE_PREVIEW_ONLY'); assert.equal(result.estimatedAmountOut,'123'); assert.equal('depositAddress' in result,false); assert.equal('depositMemo' in result,false); assert.equal('signature' in result,false);
+});
+test('live preview runner blocks .testnet addresses before any provider call', async () => { let called=false; await assert.rejects(requestLiveOneClickPreview({...base,recipient:'ajotest1.testnet',quoteClient:{async getQuotePreview(){called=true;}}}),e=>{assert.equal(e.code,'LIVE_1CLICK_TESTNET_ADDRESS_BLOCKED');return true;}); assert.equal(called,false); });
+test('live preview runner requires mainnet recipient and refund inputs', async () => { let called=false; await assert.rejects(requestLiveOneClickPreview({quoteClient:{async getQuotePreview(){called=true;}}}),/mainnet NEAR recipient/); assert.equal(called,false); });
+test('live preview runner never accepts a non-positive or non-integer amount', async () => { let called=false; await assert.rejects(requestLiveOneClickPreview({...base,amount:'0',quoteClient:{async getQuotePreview(){called=true;}}}),/positive base-unit integer/); assert.equal(called,false); });

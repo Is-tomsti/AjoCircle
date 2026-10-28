@@ -17,9 +17,10 @@ function sendJson(response, statusCode, body) {
  * owns/is allowed to view this exact stored intent. It must return true only
  * after checking trusted identity and circle membership/permissions.
  */
-export function createContributionStatusHandler({ store, contractClient, authorizeIntent } = {}) {
+export function createContributionStatusHandler({ store, contractClient, resolveContractClient, authorizeIntent } = {}) {
   if (!store || typeof store.getIntent !== 'function') throw new Error('A trusted settlement store is required');
-  if (!contractClient) throw new Error('A NEAR contract read client is required');
+  if (!contractClient && typeof resolveContractClient !== 'function') throw new Error('A NEAR contract read client or trusted client resolver is required');
+  if (contractClient && typeof resolveContractClient === 'function') throw new Error('Provide either a fixed contract client or a trusted client resolver, not both');
   if (typeof authorizeIntent !== 'function') throw new Error('A trusted intent authorization callback is required');
 
   return async function contributionStatusHandler(request, response) {
@@ -54,7 +55,9 @@ export function createContributionStatusHandler({ store, contractClient, authori
     if (!authorized) return sendJson(response, 403, { error: 'FORBIDDEN' });
 
     try {
-      const status = await getMemberContributionStatus({ store, contractClient, intentId: intent.intentId });
+      const client = resolveContractClient ? await resolveContractClient({ request, intent }) : contractClient;
+      if (!client) throw new Error('Trusted contract client resolution failed');
+      const status = await getMemberContributionStatus({ store, contractClient: client, intentId: intent.intentId });
       return sendJson(response, 200, { status });
     } catch {
       return sendJson(response, 503, { error: 'STATUS_UNAVAILABLE' });

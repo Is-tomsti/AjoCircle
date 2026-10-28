@@ -64,23 +64,17 @@ async function withServer(fixture, callback) {
   }
 }
 
-test('real HTTP request authenticates, resolves SQLite membership/context, and persists a trusted pending intent', async () => {
+test('real HTTP request authenticates but blocks an unverified refund wallet before quote creation', async () => {
   const fixture = createFixture();
   await withServer(fixture, async baseUrl => {
     const response = await fetch(baseUrl + MEMBER_QUOTE_ENDPOINT_PATH, {
       method: 'POST', headers: { authorization: 'Bearer test-only-session', 'content-type': 'application/json' },
       body: JSON.stringify(validBody),
     });
-    assert.equal(response.status, 201);
-    const body = await response.json();
-    assert.equal(body.quote.memberId, 'member-http');
-    assert.equal(body.quote.recipient, 'member-http.near');
-    assert.equal(fixture.quoteRequests.length, 1);
-    assert.equal(fixture.quoteRequests[0].refundTo, '0xregistered-http-refund');
-    assert.equal(fixture.quoteRequests[0].destinationAsset, 'nep141:wrap.near');
-    const saved = fixture.settlementStore.getIntent('http-integration-intent');
-    assert.equal(saved.status, 'PENDING');
-    assert.equal(saved.memberId, 'member-http');
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: 'REFUND_WALLET_NOT_REGISTERED' });
+    assert.equal(fixture.quoteRequests.length, 0);
+    assert.equal(fixture.settlementStore.getIntent('http-integration-intent'), null);
     assert.equal(response.headers.get('cache-control'), 'no-store');
   });
 });

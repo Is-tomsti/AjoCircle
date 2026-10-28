@@ -5,7 +5,16 @@ import { getMemberContributionStatus } from './contribution-status.mjs';
 
 const record = { intentId: 'status-intent', depositAddress: 'status-deposit', circleId: 'circle-1', memberId: 'alice.near', round: 0, destinationAsset: 'nep141:wrap.near', recipient: 'alice.near', minimumAmountOut: '100', requiredContributionAmount: '1000000000000000000000000' };
 const views = (overrides = {}) => ({ getRound: async () => 0, getContribution: async () => null, isCircleCompleted: async () => false, isPayoutPending: async () => false, isPayoutComplete: async () => false, ...overrides });
-const setup = (overrides = {}) => { const store = new SettlementStore(); store.createPendingIntent(record); return { store, contractClient: views(overrides), intentId: record.intentId }; };
+const setup = (overrides = {}, intentRecord = record) => { const store = new SettlementStore(); store.createPendingIntent(intentRecord); return { store, contractClient: views(overrides), intentId: intentRecord.intentId }; };
+
+test('queries the contract with the NEAR recipient, not the internal membership ID', async () => {
+  const intentRecord = { ...record, memberId: 'membership-row-1' };
+  const input = setup({ getContribution: async ({ member }) => { assert.equal(member, 'alice.near'); return null; } }, intentRecord);
+  const result = await getMemberContributionStatus(input);
+  assert.equal(result.memberId, 'membership-row-1');
+  assert.equal(result.memberNearAccount, 'alice.near');
+  input.store.close();
+});
 
 test('does not confuse successful swap delivery with a contract contribution', async () => {
   const input = setup();

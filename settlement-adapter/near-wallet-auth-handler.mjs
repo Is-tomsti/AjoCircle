@@ -28,9 +28,29 @@ async function readJson(request) {
 }
 
 /** HTTP adapter for the NEP-413 challenge and session-exchange endpoints. */
-export function createNearWalletAuthHandler({ service } = {}) {
+export function createNearWalletAuthHandler({ service, challengeRateLimit = 10, challengeRateWindowMs = 60_000, clock = () => Date.now() } = {}) {
   if (!service || typeof service.issueChallenge !== 'function' || typeof service.verifySignedMessage !== 'function') {
     throw new Error('A configured NEAR wallet authentication service is required');
+  }
+  if (!Number.isSafeInteger(challengeRateLimit) || challengeRateLimit < 1 || !Number.isSafeInteger(challengeRateWindowMs) || challengeRateWindowMs < 1000 || typeof clock !== 'function') {
+    throw new Error('Valid challenge rate-limit settings and clock are required');
+  }
+  const challengeBuckets = new Map();
+  function allowChallengeForIp(request) {
+    const now = clock();
+    if (!Number.isSafeInteger(now) || now <= 0) return false;
+    for (const [ip, bucket] of challengeBuckets) {
+      if (now - bucket.windowStartedAt >= challengeRateWindowMs) challengeBuckets.delete(ip);
+    }
+    const ip = request.socket?.remoteAddress ?? 'unknown';
+    let bucket = challengeBuckets.get(ip);
+    if (!bucket || now - bucket.windowStartedAt >= challengeRateWindowMs) {
+      bucket = { windowStartedAt: now, count: 0 };
+      challengeBuckets.set(ip, bucket);
+    }
+    if (bucket.count >= challengeRateLimit) return false;
+    bucket.count += 1;
+    return true;
   }
   return async function nearWalletAuthHandler(request, response) {
     let pathname;
@@ -42,6 +62,10 @@ export function createNearWalletAuthHandler({ service } = {}) {
     if (request.method !== 'POST') {
       response.setHeader('allow', 'POST');
       return sendJson(response, 405, { error: 'METHOD_NOT_ALLOWED' });
+    }
+    if (pathname === NEAR_WALLET_CHALLENGE_PATH && !allowChallengeForIp(request)) {
+      response.setHeader('retry-after', String(Math.ceil(challengeRateWindowMs / 1000)));
+      return sendJson(response, 429, { error: 'CHALLENGE_RATE_LIMITED' });
     }
     let body;
     try { body = await readJson(request); }

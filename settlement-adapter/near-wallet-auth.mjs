@@ -91,6 +91,11 @@ export class NearWalletAuthStore {
       .run(atMs, challenge.nonceHash, atMs);
     return Number(result.changes) === 1;
   }
+  deleteExpiredChallenges(atMs = nowMs(this.clock)) {
+    if (!Number.isSafeInteger(atMs) || atMs <= 0) throw new Error('Cleanup timestamp is invalid');
+    const result = this.db.prepare('DELETE FROM wallet_auth_challenges WHERE expires_at_ms <= ?').run(atMs);
+    return Number(result.changes);
+  }
   close() { this.db.close(); }
 }
 

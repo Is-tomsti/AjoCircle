@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import { createContributionStatusHandler, CONTRIBUTION_STATUS_ENDPOINT_PATH } from './contribution-status-handler.mjs';
 
 const intent = Object.freeze({
-  intentId: 'intent-123', circleId: 'circle-1', memberId: 'member.testnet', round: 2,
+  intentId: 'intent-123', circleId: 'circle-1', memberId: 'membership-row-1', recipient: 'member.testnet', round: 2,
   status: 'VERIFIED_DELIVERY', requiredContributionAmount: '1000000000000000000000000',
 });
 const store = { getIntent: id => id === intent.intentId ? intent : null };
 const contractClient = {
   getRound: async () => 2,
-  getContribution: async ({ member }) => member === intent.memberId ? intent.requiredContributionAmount : null,
+  getContribution: async ({ member }) => member === intent.recipient ? intent.requiredContributionAmount : null,
   isCircleCompleted: async () => false,
   isPayoutPending: async () => false,
   isPayoutComplete: async () => false,
@@ -38,6 +38,19 @@ function response() {
   assert.equal(res.headers['cache-control'], 'no-store');
   assert.equal(res.body.status.contractStatus, 'CONTRIBUTION_CONFIRMED');
   assert.equal(authorizationCalls, 1);
+});
+
+test('resolves a circle-specific contract client only after trusted intent authorization', async () => {
+  const calls = [];
+  const handler = createContributionStatusHandler({
+    store,
+    resolveContractClient: async ({ intent: stored }) => { calls.push(`client:${stored.circleId}`); return contractClient; },
+    authorizeIntent: async (req, stored) => { calls.push(`authorize:${stored.circleId}`); return true; },
+  });
+  const res = response();
+  await handler(request(), res);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(calls, ['authorize:circle-1', 'client:circle-1']);
 });
 
 test('rejects unauthorized access without reading contract state', async () => {

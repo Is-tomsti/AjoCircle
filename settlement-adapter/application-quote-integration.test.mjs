@@ -71,25 +71,16 @@ function buildIntegration({ authenticateRequest } = {}) {
   return { applicationStore, settlementStore, handler, quoteRequests };
 }
 
-test('end-to-end quote path uses SQLite identity/context and persists only a trusted pending intent', async () => {
+test('end-to-end quote path blocks registered but unverified refund addresses before contacting 1Click', async () => {
   const ctx = buildIntegration();
   try {
     const res = response();
     await ctx.handler({ method: 'POST', url: MEMBER_QUOTE_ENDPOINT_PATH, body }, res);
 
-    assert.equal(res.statusCode, 201);
-    assert.equal(res.body.quote.memberId, 'member-integration');
-    assert.equal(res.body.quote.recipient, 'member.near');
-    assert.equal(res.body.quote.originAsset, 'asset:test-usdc');
-    assert.equal(ctx.quoteRequests.length, 1);
-    assert.equal(ctx.quoteRequests[0].refundTo, '0xregistered-refund');
-    assert.equal(ctx.quoteRequests[0].destinationAsset, 'nep141:wrap.near');
-
-    const persisted = ctx.settlementStore.getIntent('integration-intent-1');
-    assert.equal(persisted.circleId, 'circle-integration');
-    assert.equal(persisted.memberId, 'member-integration');
-    assert.equal(persisted.recipient, 'member.near');
-    assert.equal(persisted.status, 'PENDING');
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.body.error, 'REFUND_WALLET_NOT_REGISTERED');
+    assert.equal(ctx.quoteRequests.length, 0);
+    assert.equal(ctx.settlementStore.getIntent('integration-intent-1'), null);
   } finally {
     ctx.applicationStore.close();
     ctx.settlementStore.close();

@@ -9,14 +9,15 @@ const units = (value, label) => {
 
 export function buildMemberMediatedQuoteRequest({
   originAsset, amount, memberNearAccount, refundTo, slippageTolerance = 100,
-  deadline, depositMode = 'SIMPLE',
+  deadline, depositMode = 'SIMPLE', dry = false,
 } = {}) {
   if (!Number.isSafeInteger(slippageTolerance) || slippageTolerance < 0 || slippageTolerance > 10000) {
     throw new Error('slippageTolerance must be an integer from 0 to 10000 basis points');
   }
   if (!['SIMPLE', 'MEMO'].includes(depositMode)) throw new Error('depositMode must be SIMPLE or MEMO');
+  if (typeof dry !== 'boolean') throw new Error('dry must be a boolean');
   return Object.freeze({
-    dry: false,
+    dry,
     swapType: 'EXACT_INPUT',
     slippageTolerance,
     originAsset: text(originAsset, 'originAsset'),

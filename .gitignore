@@ -8,3 +8,55 @@
 .DS_Store
 
 *.bak*
+*.backup-*
+
+/backups/
+.near-credentials/
+*.local.json
+*.local.*
+*.server-config.json
+server-config.local.*
+
+# Local recovery snapshots, internal handoffs, and one-off inspection artifacts (keep on disk, do not publish)
+/AJOCIRCLE_HANDOVER_*.md
+/AJOCIRCLE_PROJECT_HANDOFF.txt
+/TESTNET_DEMO_RECOVERY_PLAN.md
+/TESTNET_EVENT_VERIFICATION_PREFLIGHT.md
+/backup-native-status-*/
+/backup-reputation-integration-*/
+/_verify-accepted-evidence.mjs
+/advance-round-args*.json
+/extend-round-deadline-args.json
+/repair-cycle4-schedule-args.json
+/inspect-*.mjs
+/inspect-*.ps1
+/reconcile-cycle4-*.mjs
+/refresh-cycle4-binding-readonly.mjs
+/patch-native-status-button.js
+/validate-cycle4-deadline-script.ps1
+/verify-cycle4-contributions-readonly.ps1
+/verify-cycle4-full-schedule.mjs
+
+# Local one-off transaction arguments and recovery snapshots; keep out of public commits
+/ajo-contrib-20261025-init.json
+/advance-round-round3-args.json
+/backup-public-distribution-*/
+/backup-public-distribution-fix-*/
+
+# Internal continuation notes, one-off diagnostics, and recovery snapshots (preserve locally; do not publish)
+/HANDOFF_*.md
+/AJOCIRCLE_HANDOFF_*.md
+/public-distribution-diagnostic.txt
+/refresh-oct24-binding-readonly.mjs
+*.manual-fix-backup
+*.recovery-backup
+*.before-*
+# One-off testnet deployment/migration/deadline operators; preserve locally, exclude from public release
+/deploy-fresh-demo-testnet.ps1
+/deploy-public-distribution-testnet.ps1
+/extend-cycle4-deadline-testnet.ps1
+/extend-oct22-deadline-testnet.ps1
+/migrate-demo-testnet.ps1
+/migrate-oct22-v2-testnet.ps1
+/migrate-oct24-v2-testnet.ps1
+/recover-oct24-deadline-testnet.ps1

@@ -30,7 +30,7 @@ function fixture({ suspended = false, fullAccess = true, registeredKeyMatches = 
     if (rpcError) return { ok: false, async json() { return {}; } };
     return { ok: true, async json() { return { result: { keys: [{ public_key: registeredKeyMatches ? publicKey : 'ed25519:' + base58(Buffer.alloc(32, 3)), access_key: { permission: fullAccess ? 'FullAccess' : { FunctionCall: { receiver_id: 'x.near', method_names: [] } } } }] } }; } };
   };
-  const service = createNearWalletAuthService({ store, rpcUrl: 'https://rpc.testnet.near.org', recipient: RECIPIENT,
+  const service = createNearWalletAuthService({ store, rpcUrl: 'https://rpc.testnet.fastnear.com', recipient: RECIPIENT,
     sessionSecret: SECRET, clock: () => NOW, fetchImpl, isAccountSuspended: async () => suspended });
   async function signed(challenge, overrides = {}) {
     const nonce = Buffer.from(challenge.nonce, 'base64');
@@ -88,7 +88,7 @@ test('rejects expired challenge before RPC lookup', async () => {
   const f = fixture();
   try {
     const challenge = await f.service.issueChallenge(); const signed = await f.signed(challenge);
-    const late = createNearWalletAuthService({ store: f.store, rpcUrl: 'https://rpc.testnet.near.org', recipient: RECIPIENT,
+    const late = createNearWalletAuthService({ store: f.store, rpcUrl: 'https://rpc.testnet.fastnear.com', recipient: RECIPIENT,
       sessionSecret: SECRET, clock: () => NOW + 5 * 60_000 + 1, fetchImpl: async () => { throw new Error('RPC must not be called'); } });
     await assert.rejects(() => late.verifySignedMessage(signed), /WALLET_AUTH_REJECTED/);
   } finally { f.store.close(); }
@@ -145,4 +145,18 @@ test('session verifier rejects wrong secret, wrong issuer/audience, tampering, e
     const parts = token.split('.'); parts[1] = parts[1].slice(0, -1) + (parts[1].endsWith('a') ? 'b' : 'a');
     assert.equal(await createHmacSessionTokenVerifier({ sessionSecret: SECRET, clock: () => NOW })(parts.join('.')), null);
   } finally { f.store.close(); }
+});
+
+
+test('expired challenge cleanup deletes expired rows and preserves live challenges', () => {
+  const store = new NearWalletAuthStore({ clock: () => NOW });
+  try {
+    const expiredNonce = Buffer.alloc(32, 11).toString('base64');
+    const liveNonce = Buffer.alloc(32, 12).toString('base64');
+    store.createChallenge({ nonce: expiredNonce, message: 'expired', recipient: RECIPIENT, expiresAtMs: NOW + 100 });
+    store.createChallenge({ nonce: liveNonce, message: 'live', recipient: RECIPIENT, expiresAtMs: NOW + 1000 });
+    assert.equal(store.deleteExpiredChallenges(NOW + 100), 1);
+    assert.equal(store.getChallenge(expiredNonce), null);
+    assert.equal(store.getChallenge(liveNonce).message, 'live');
+  } finally { store.close(); }
 });

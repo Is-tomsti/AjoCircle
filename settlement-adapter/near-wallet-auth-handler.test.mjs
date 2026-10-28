@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { createNearWalletAuthHandler, NEAR_WALLET_CHALLENGE_PATH, NEAR_WALLET_VERIFY_PATH } from './near-wallet-auth-handler.mjs';
 import { startMemberQuoteDevServer } from './member-quote-dev-server.mjs';
 
-async function withServer(service, callback) {
-  const handler = createNearWalletAuthHandler({ service });
+async function withServer(service, callback, options = {}) {
+  const handler = createNearWalletAuthHandler({ service, ...options });
   const server = await startMemberQuoteDevServer({ handler });
   try { await callback(`http://127.0.0.1:${server.address().port}`); }
   finally { await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
@@ -46,4 +46,23 @@ test('rejects extra fields, malformed JSON, and oversized bodies', async () => {
     response = await fetch(base + NEAR_WALLET_CHALLENGE_PATH, { method: 'POST', body: JSON.stringify({ padding: 'x'.repeat(17 * 1024) }) });
     assert.equal(response.status, 413); assert.deepEqual(await response.json(), { error: 'BODY_TOO_LARGE' });
   });
+});
+
+
+test('challenge endpoint rate-limits by remote IP and resets after the window', async () => {
+  let now = Date.now();
+  let issued = 0;
+  await withServer({ async issueChallenge() { issued += 1; return challenge; }, async verifySignedMessage() { throw new Error('unused'); } }, async base => {
+    const postChallenge = () => fetch(base + NEAR_WALLET_CHALLENGE_PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    assert.equal((await postChallenge()).status, 200);
+    assert.equal((await postChallenge()).status, 200);
+    const limited = await postChallenge();
+    assert.equal(limited.status, 429);
+    assert.equal(limited.headers.get('retry-after'), '1');
+    assert.deepEqual(await limited.json(), { error: 'CHALLENGE_RATE_LIMITED' });
+    assert.equal(issued, 2);
+    now += 1000;
+    assert.equal((await postChallenge()).status, 200);
+    assert.equal(issued, 3);
+  }, { challengeRateLimit: 2, challengeRateWindowMs: 1000, clock: () => now });
 });

@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#101b17" />
+    <meta name="description" content="AjoCircle testnet wallet sign-in and member quote preview." />
+    <title>AjoCircle · NEAR testnet</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="AjoCircle home"><span class="brand-mark">A</span><span>AjoCircle</span></a>
+        <span class="network-pill"><span class="pulse-dot"></span> NEAR TESTNET</span>
+      </header>
+      <main class="layout">
+        <section class="intro">
+          <p class="eyebrow">COMMUNITY SAVINGS, BUILT WITH CARE</p>
+          <h1>Save together.<br /><em>Move with trust.</em></h1>
+          <p class="intro-copy">Connect a NEAR testnet wallet to verify your identity. Signing is free and does not submit a blockchain transaction.</p>
+          <div class="trust-list">
+            <div><span class="check">✓</span><span><strong>Message signing only</strong><small>No transaction or funds moved during sign-in.</small></span></div>
+            <div><span class="check">✓</span><span><strong>Single-use challenge</strong><small>Your signature is bound to this app and expires.</small></span></div>
+            <div><span class="check">✓</span><span><strong>Testnet only</strong><small>This interface is configured for NEAR testnet wallets.</small></span></div>
+          </div>
+        </section>
+
+        <section class="panel" aria-labelledby="login-heading">
+          <div class="panel-head">
+            <div><p class="eyebrow">YOUR WALLET</p><h2 id="login-heading">Sign in to AjoCircle</h2></div>
+            <span class="shield-icon" aria-hidden="true">⌁</span>
+          </div>
+          <p class="muted">Choose a wallet that advertises NEP-413 <code>signMessage</code> support on testnet. If your wallet is missing from the list, its current connector manifest may not advertise compatible signing support.</p>
+          <button id="connect-button" class="primary-button" type="button"><span>↗</span> Connect &amp; sign in</button>
+          <p id="status" class="status" role="status" aria-live="polite">Ready when you are.</p>
+          <div id="account-card" class="account-card hidden">
+            <div class="account-row"><span class="account-avatar">◎</span><div class="account-details"><span id="wallet-name" class="muted small">CONNECTED WALLET</span><strong id="account-id"></strong></div><button id="logout-button" class="text-button" type="button">Sign out</button></div>
+            <p class="token-note">Session token is held in this browser tab only. It is never placed in the URL.</p>
+            <button id="verify-session-button" class="secondary-button" type="button">Verify session with server</button>
+            <pre id="session-result" class="result-box hidden" aria-live="polite"></pre>
+          </div>
+          <section id="circle-create-section" class="feature-panel hidden" aria-labelledby="circle-create-heading">
+            <p class="eyebrow">NEW CIRCLE SETUP</p>
+            <h3 id="circle-create-heading">Create circle records</h3>
+            <p class="muted small">This creates local application records and a policy. It does not deploy a contract. Enter an already-deployed NEAR testnet contract ID, then use the verification step below to check its code hash and public state against the approved contract.</p>
+            <form id="circle-create-form" class="feature-form">
+              <label>Existing deployed contract ID<input name="contractId" required maxlength="64" pattern="[a-z0-9_-]+(\.[a-z0-9_-]+)*" placeholder="your-contract.testnet" /></label>
+              <label>Circle type<select name="mode" required><option value="PROTECTED_PUBLIC">Protected public (listing not yet implemented)</option><option value="PRIVATE_TRUSTED">Private trusted (invitation-only)</option></select></label>
+              <label>Payment grace period (days)<input name="gracePeriodDays" type="number" min="1" max="30" step="1" value="5" required /></label>
+              <button id="create-circle-button" class="primary-button" type="submit">Create local circle setup</button>
+            </form>
+            <pre id="circle-create-result" class="result-box hidden" aria-live="polite"></pre>
+            <form id="contract-verify-form" class="feature-form">
+              <label>Circle ID to verify<input name="circleId" required maxlength="200" placeholder="Created circle ID" /></label>
+              <button id="verify-contract-button" class="secondary-button" type="submit">Verify contract on NEAR testnet</button>
+            </form>
+            <p class="muted small">Verification is read-only. The contract must match the approved WASM hash and policy mode. Verification alone will not enable quotes until the on-chain schedule can be matched exactly.</p>
+            <pre id="contract-verification-result" class="result-box hidden" aria-live="polite"></pre>
+            <div class="divider"><span>LOCAL SCHEDULE EXPECTATIONS</span></div>
+            <p class="muted small">Record the expected on-chain member order, payout order, and treasurer before comparing schedules. These values must reflect the actual deployed contract; this form only saves local expectations and never changes the contract.</p>
+            <form id="schedule-parity-configure-form" class="feature-form">
+              <label>Circle ID<input name="circleId" required maxlength="200" placeholder="Circle ID from setup" /></label>
+              <label>Member order (NEAR account IDs, comma-separated)<input name="members" required maxlength="8000" placeholder="member1.testnet, member2.testnet, member3.testnet" /></label>
+              <label>Payout order (NEAR account IDs, comma-separated)<input name="payoutOrder" required maxlength="8000" placeholder="member1.testnet, member2.testnet, member3.testnet" /></label>
+              <label>Configured treasurer account<input name="treasurerAgent" required maxlength="64" pattern="[a-z0-9_-]+(\.[a-z0-9_-]+)*" placeholder="treasurer.testnet" /></label>
+              <button id="configure-parity-button" class="secondary-button" type="submit">Save expected schedule</button>
+            </form>
+            <pre id="schedule-parity-result" class="result-box hidden" aria-live="polite"></pre>
+          </section>
+          <section id="circle-policy-section" class="feature-panel hidden" aria-labelledby="circle-policy-heading">
+            <p class="eyebrow">CIRCLE MEMBERSHIP</p>
+            <h3 id="circle-policy-heading">Read the rules before joining</h3>
+            <p class="muted small">Preview the current policy. New members of private circles require a valid invitation link; existing members can review and accept their policy without one.</p>
+            <form id="policy-preview-form" class="feature-form">
+              <label>Circle ID<input name="circleId" required maxlength="200" placeholder="circle-id" /></label>
+              <label>Private invitation token (if invited)<input name="inviteToken" maxlength="512" placeholder="Paste the invitation token" /></label>
+              <button id="policy-preview-button" class="secondary-button" type="submit">Preview circle rules</button>
+            </form>
+            <div id="policy-preview-card" class="policy-preview hidden">
+              <div class="policy-title-row"><strong id="policy-mode-title">Circle policy</strong><span id="policy-version-label" class="policy-version"></span></div>
+              <p id="policy-description" class="muted small"></p>
+              <ul id="policy-rule-list" class="policy-rule-list"></ul>
+              <label class="acceptance-label"><input id="policy-acceptance" type="checkbox" /> I have read and agree to this circle's displayed rules.</label>
+              <button id="join-circle-button" class="primary-button" type="button" disabled>Accept rules &amp; join circle</button>
+            </div>
+            <pre id="policy-result" class="result-box hidden" aria-live="polite"></pre>
+            <div class="cycle-gate">
+              <div class="policy-title-row"><strong>Cycle readiness</strong><span id="cycle-status-label" class="policy-version">Not checked</span></div>
+              <p class="muted small">For an active in-progress deployed contract, import its lifecycle from fresh read-only testnet evidence. This updates local metadata only and never sends a transaction. Completed or payout-pending contracts cannot be imported as active cycles; use “Verify contract on NEAR testnet” to inspect their terminal lifecycle. Expired deadlines remain blocked.</p>
+              <label>Circle ID for existing contract<input id="import-cycle-circle-id" maxlength="200" placeholder="Circle ID from setup" /></label>
+              <button id="import-existing-cycle-button" class="secondary-button" type="button">Import existing on-chain cycle (read-only)</button>
+              <form id="cycle-configure-form" class="feature-form">
+                <label>Circle ID<input name="circleId" required maxlength="200" placeholder="Circle ID from setup" /></label>
+                <label>Contribution amount (integer base units)<input name="contributionAmount" required inputmode="numeric" pattern="[1-9][0-9]*" placeholder="1000000000000000000000000" /></label>
+                <div class="field-grid">
+                  <label>Expected members / rounds<input name="memberCount" type="number" min="2" max="100" step="1" value="2" required /></label>
+                  <label>Interval between deadlines (minutes)<input name="intervalMinutes" type="number" min="1" max="525600" step="1" value="15" /></label>
+                </div>
+                <label>First round deadline (your local time, used for generated schedules)<input name="firstDeadline" type="datetime-local" step="0.001" /></label>
+                <label>Exact on-chain deadlines in nanoseconds (optional, comma-separated)<textarea name="exactDeadlinesNs" rows="3" maxlength="20000" placeholder="1792563030335604671, 1792563930335604671, ..."></textarea></label>
+                <p class="muted small">For exact parity with an existing contract, paste every value from its full round-deadline view in round order. Nanosecond values are preserved exactly. Leave this blank only when generating a new millisecond-aligned local schedule.</p>
+                <button id="configure-cycle-button" class="secondary-button" type="submit">Configure cycle schedule</button>
+              </form>
+              <div class="field-grid">
+                <button id="cycle-status-button" class="secondary-button" type="button">Check readiness</button>
+                <button id="cycle-start-button" class="primary-button" type="button" disabled>Start cycle</button>
+              </div>
+              <pre id="cycle-result" class="result-box hidden" aria-live="polite"></pre>
+              <div class="divider"><span>PAYOUT AGENT · READ-ONLY CHECK</span></div>
+              <p class="muted small">Check the live finalized contract state, current recipient, contribution count, deadline, and protection reserve. This does not release a payout or submit a blockchain transaction.</p>
+              <form id="payout-readiness-form" class="feature-form">
+                <label>Circle ID<input name="circleId" required maxlength="200" placeholder="Verified application circle ID" /></label>
+                <button id="payout-readiness-button" class="secondary-button" type="submit">Check payout readiness</button>
+              </form>
+              <pre id="payout-readiness-result" class="result-box hidden" aria-live="polite"></pre>
+              <div class="divider"><span>PROTECTED PUBLIC CIRCLE · FINAL DISTRIBUTION</span></div>
+              <p class="muted small">Read the finalized testnet contract and assess whether the accumulated public-circle pool is blocked, ready, pending, retryable, or complete. This control is strictly read-only: it never starts, retries, or submits a transfer.</p>
+              <form id="public-distribution-assessment-form" class="feature-form">
+                <label>Protected public circle ID<input name="circleId" required maxlength="200" autocomplete="off" placeholder="Verified public application circle ID" /></label>
+                <button id="public-distribution-assessment-button" class="secondary-button" type="submit" disabled>Assess public distribution (read-only)</button>
+              </form>
+              <pre id="public-distribution-assessment-result" class="result-box hidden" aria-live="polite"></pre>
+              <div class="divider"><span>PUBLIC DISTRIBUTION EXECUTION · TWO-MEMBER AUTHORIZATION</span></div>
+              <p class="muted small">Prepare the verified plan while signed in as one active member. A different active member must sign in and authorize the exact plan. Only then can the treasury CLI start one transfer at a time. Check status between transfers; never retry an uncertain transaction.</p>
+              <form id="public-distribution-prepare-form" class="feature-form">
+                <label>Circle ID<input name="circleId" required maxlength="200" autocomplete="off" value="fe2af794-52ae-4daa-ba67-3b39eb62f10b" /></label>
+                <button id="public-distribution-prepare-button" class="secondary-button" type="submit" disabled>Prepare distribution plan (no transaction)</button>
+              </form>
+              <pre id="public-distribution-execution-result" class="result-box hidden" aria-live="polite"></pre>
+              <form id="public-distribution-authorize-form" class="feature-form">
+                <label>Distribution plan ID<input name="planId" required maxlength="200" autocomplete="off" placeholder="Plan ID returned after preparation" /></label>
+                <label>Exact second-member authorization phrase<input name="confirmation" required maxlength="300" autocomplete="off" spellcheck="false" placeholder="Copy exact phrase from the prepared plan" /></label>
+                <button id="public-distribution-authorize-button" class="secondary-button" type="submit" disabled>Authorize as a different active member</button>
+              </form>
+              <form id="public-distribution-start-form" class="feature-form">
+                <label>Authorized distribution plan ID<input name="planId" required maxlength="200" autocomplete="off" placeholder="Authorized plan ID" /></label>
+                <label>Exact start confirmation phrase<input name="confirmation" required maxlength="300" autocomplete="off" spellcheck="false" placeholder="Copy exact start phrase from the plan" /></label>
+                <button id="public-distribution-start-button" class="primary-button" type="submit" disabled>Review and start first transfer</button>
+              </form>
+              <form id="public-distribution-continue-form" class="feature-form">
+                <label>Distribution plan ID<input name="planId" required maxlength="200" autocomplete="off" placeholder="Same authorized plan ID" /></label>
+                <label>Exact start confirmation phrase<input name="confirmation" required maxlength="300" autocomplete="off" spellcheck="false" placeholder="Same exact start phrase" /></label>
+                <button id="public-distribution-continue-button" class="secondary-button" type="submit" disabled>Continue next transfer (after status check)</button>
+              </form>
+              <form id="public-distribution-status-form" class="feature-form">
+                <label>Distribution plan ID<input name="planId" required maxlength="200" autocomplete="off" placeholder="Same distribution plan ID" /></label>
+                <button id="public-distribution-status-button" class="secondary-button" type="submit" disabled>Check distribution status (read-only)</button>
+              </form>
+              <pre id="public-distribution-execution-status" class="result-box hidden" aria-live="polite"></pre>
+              <p class="muted small">When the live contract is ready, you can create a durable payout plan for review. This still does not authorize a payout, sign, or submit a blockchain transaction.</p>
+              <button id="prepare-payout-plan-button" class="secondary-button" type="button" disabled>Prepare payout plan (no transaction)</button>
+              <pre id="payout-plan-result" class="result-box hidden" aria-live="polite"></pre>
+              <form id="payout-plan-status-form" class="feature-form">
+                <label>Existing payout plan ID<input name="planId" required maxlength="200" autocomplete="off" placeholder="Paste the plan ID returned above" /></label>
+                <button id="payout-plan-status-button" class="secondary-button" type="submit" disabled>Check payout plan status (read-only)</button>
+              </form>
+              <pre id="payout-plan-status-result" class="result-box hidden" aria-live="polite"></pre>
+              <div class="divider"><span>SECOND-OPERATOR APPROVAL · LEDGER ONLY</span></div>
+              <p class="muted small">Sign in with a different active circle member than the account that prepared the plan. This records independent approval only; it does not sign or submit a blockchain transaction.</p>
+              <form id="payout-plan-authorize-form" class="feature-form">
+                <label>Prepared payout plan ID<input name="planId" required maxlength="200" autocomplete="off" placeholder="Filled from the newly prepared plan" /></label>
+                <label>Exact confirmation phrase<input name="confirmation" required maxlength="300" autocomplete="off" spellcheck="false" placeholder="Filled from the newly prepared plan" /></label>
+                <button id="authorize-payout-plan-button" class="secondary-button" type="submit" disabled>Record second-operator approval (no transaction)</button>
+              </form>
+              <pre id="payout-plan-authorize-result" class="result-box hidden" aria-live="polite"></pre>
+              <div class="divider"><span>LOCAL CLI-SIGNED PAYOUT · TESTNET ONLY</span></div>
+              <p class="muted small">This is the only app control that can submit the payout. It rechecks the authorized plan, deployed code hash, schedule parity, and live readiness on the server, then uses the existing NEAR CLI keychain only if its public key matches a finalized FullAccess key for the exact contract. Review the contract, round, recipient, amount, and testnet in the confirmation dialog. A successful transaction submission still needs a separate payout-completion check.</p>
+              <form id="payout-plan-submit-form" class="feature-form">
+                <label>Authorized payout plan ID<input name="planId" required maxlength="200" autocomplete="off" placeholder="Filled from the newly prepared plan" /></label>
+                <label class="acceptance-label"><input name="confirmPayout" type="checkbox" required /> I understand this will submit a testnet transaction from the existing local NEAR CLI keychain to transfer the verified round pot to the verified recipient after the final confirmation dialog.</label>
+                <button id="submit-payout-plan-button" class="primary-button" type="submit" disabled>Recheck and review CLI payout</button>
+              </form>
+              <pre id="payout-plan-submit-result" class="result-box hidden" aria-live="polite"></pre>
+              <form id="payout-plan-finalize-form" class="feature-form">
+                <label>Submitted payout plan ID<input name="planId" required maxlength="200" autocomplete="off" placeholder="Filled from the newly prepared plan" /></label>
+                <button id="finalize-payout-plan-button" class="secondary-button" type="submit" disabled>Verify finalized payout completion (read-only)</button>
+              </form>
+              <pre id="payout-plan-finalize-result" class="result-box hidden" aria-live="polite"></pre>
+            </div>
+          </section>
+          <section id="circle-invitation-section" class="feature-panel hidden" aria-labelledby="invitation-heading">
+            <p class="eyebrow">PRIVATE TRUSTED CIRCLE</p>
+            <h3 id="invitation-heading">Create an invitation link</h3>
+            <p class="muted small">Only active members of an existing private circle can create invitations. Links expire and have a limited number of uses.</p>
+            <form id="invitation-form" class="feature-form">
+              <label>Private circle ID<input name="circleId" required maxlength="200" placeholder="your-private-circle-id" /></label>
+              <div class="field-grid">
+                <label>Expiry (hours)<input name="expiresInHours" type="number" min="1" max="720" step="1" value="168" required /></label>
+                <label>Maximum uses<input name="maxUses" type="number" min="1" max="100" step="1" value="5" required /></label>
+              </div>
+              <button id="create-invitation-button" class="secondary-button" type="submit">Create invitation link</button>
+            </form>
+            <div id="invitation-result" class="hidden">
+              <label>Share this link<input id="invitation-link" readonly /></label>
+              <button id="copy-invitation-button" class="text-button" type="button">Copy invitation link</button>
+              <button id="revoke-invitation-button" class="text-button" type="button">Revoke this invitation</button>
+            </div>
+          </section>
+          <section id="contribution-status-section" class="feature-panel" aria-labelledby="contribution-status-heading">
+            <p class="eyebrow">READ-ONLY ON-CHAIN CHECK</p>
+            <h3 id="contribution-status-heading">Check contribution status</h3>
+            <p class="muted small">Check an existing settlement intent against current verified NEAR contract state. This does not create a quote or submit a transaction.</p>
+            <form id="contribution-status-form" class="feature-form">
+              <label>Settlement intent ID<input name="intentId" required maxlength="200" autocomplete="off" placeholder="Paste an existing intent ID" /></label>
+              <button id="contribution-status-button" class="secondary-button" type="submit" disabled>Check on-chain status</button>
+            </form>
+            <pre id="contribution-status-result" class="result-box hidden" aria-live="polite"></pre>
+          </section>
+          <section id="native-evidence-status-section" class="feature-panel" aria-labelledby="native-evidence-status-heading">
+            <p class="eyebrow">READ-ONLY CONTRIBUTION HISTORY</p>
+            <h3 id="native-evidence-status-heading">Check native contribution</h3>
+            <p class="muted small">Shows stored verified evidence separately from the current on-chain view. This check never sends a transaction or changes reputation.</p>
+            <form id="native-evidence-status-form" class="feature-form">
+              <label>Circle ID<input name="circleId" required maxlength="200" autocomplete="off" placeholder="Existing application circle ID" /></label>
+              <label>Round number<input name="round" type="number" min="0" max="1000" step="1" value="0" required /></label>
+              <button id="native-evidence-status-button" class="secondary-button" type="submit">Check native contribution</button>
+            </form>
+            <pre id="native-evidence-status-result" class="result-box hidden" aria-live="polite"></pre>
+          </section>
+          <section id="native-contribution-section" class="feature-panel" aria-labelledby="native-contribution-heading">
+            <p class="eyebrow">WALLET-CONFIRMED CONTRIBUTION</p>
+            <h3 id="native-contribution-heading">Contribute native NEAR</h3>
+            <p class="muted small">After a fresh authenticated contract and schedule-parity check, this reads the live testnet round and exact required amount. Your connected wallet must explicitly approve the native NEAR transaction. Nothing is sent until you approve it in the wallet. Testnet only.</p>
+            <form id="native-contribution-form" class="feature-form">
+              <label>Circle ID<input name="circleId" required maxlength="200" autocomplete="off" placeholder="Your verified application circle ID" /></label>
+              <button id="native-contribution-button" class="primary-button" type="submit" disabled>Verify and prepare contribution</button>
+            </form>
+            <pre id="native-contribution-result" class="result-box hidden" aria-live="polite"></pre>
+          </section>
+          <section id="contribution-evidence-section" class="feature-panel" aria-labelledby="contribution-evidence-heading">
+            <p class="eyebrow">VERIFIED CONTRIBUTION EVIDENCE</p>
+            <h3 id="contribution-evidence-heading">Record an existing contribution</h3>
+            <p class="muted small">After your native NEAR contribution transaction has finalized on testnet, submit its transaction hash. AjoCircle verifies the transaction and trusted circle membership before updating reputation. This form does not send a transaction. Never paste a private key or seed phrase.</p>
+            <form id="contribution-evidence-form" class="feature-form">
+              <label>Circle ID<input name="circleId" required maxlength="200" autocomplete="off" placeholder="Your existing application circle ID" /></label>
+              <label>Round number<input name="round" type="number" min="0" max="1000" step="1" value="0" required /></label>
+              <label>Finalized NEAR testnet transaction hash<input name="transactionHash" required maxlength="128" autocomplete="off" spellcheck="false" placeholder="Paste the real transaction hash" /></label>
+              <button id="contribution-evidence-button" class="secondary-button" type="submit" disabled>Verify and record evidence</button>
+            </form>
+            <pre id="contribution-evidence-result" class="result-box hidden" aria-live="polite"></pre>
+          </section>
+          <div class="divider"><span>AFTER SIGN-IN</span></div>
+          <form id="quote-form" class="quote-form">
+            <h3>Member quote preview</h3>
+            <p class="muted small">Offline preview mode: this estimate is synthetic, not a market quote. No deposit instructions or settlement intent are created. The destination is wrapped NEAR, not a native-NEAR contribution; live 1Click previews are blocked for this testnet wallet.</p>
+
+            <label>Circle ID<input name="circleId" required maxlength="200" placeholder="your-circle-id" /></label>
+            <div class="field-grid">
+              <label>Round<input name="round" type="number" min="0" step="1" value="0" required /></label>
+              <label>Amount (base units)<input name="amount" inputmode="numeric" pattern="[1-9][0-9]*" value="1000000" required placeholder="1000000" /></label>
+            </div>
+            <label>Origin asset<select name="originAsset" required aria-describedby="origin-asset-help" disabled><option value="">Loading server-approved assets?</option></select></label>
+            <p id="origin-asset-help" class="muted small">The list is loaded from the authenticated server-side allowlist. If no assets are configured, preview stays unavailable. This list does not enable live settlement.</p>
+            <button id="quote-button" class="secondary-button" type="submit" disabled>Preview member quote</button>
+            <pre id="quote-result" class="result-box hidden" aria-live="polite"></pre>
+          </form>
+          <p class="footer-note">Hackathon prototype · Testnet only · No real funds</p>
+        </section>
+      </main>
+      <footer class="page-footer"><span>© AjoCircle</span><span>NEAR testnet · No funds moved</span></footer>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

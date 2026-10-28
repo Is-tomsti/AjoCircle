@@ -93,6 +93,48 @@ export class NearContractReadClient {
     return this.#booleanView('is_payout_complete');
   }
 
+  async getPublicDistributionPlan() {
+    const value = await this.view('get_public_distribution_plan');
+    if (!Array.isArray(value)) {
+      throw new Error('get_public_distribution_plan returned an invalid plan');
+    }
+
+    const seen = new Set();
+    const plan = value.map((entry, index) => {
+      if (!Array.isArray(entry) || entry.length !== 2) {
+        throw new Error(`Public distribution plan entry ${index} is invalid`);
+      }
+      const [member, amountYocto] = entry;
+      if (typeof member !== 'string'
+          || !/^[a-z0-9._-]{2,64}$/.test(member)
+          || seen.has(member)) {
+        throw new Error(`Public distribution plan member ${index} is invalid or duplicated`);
+      }
+      if (typeof amountYocto !== 'string' || !/^[1-9]\d*$/.test(amountYocto)) {
+        throw new Error(`Public distribution plan amount ${index} is invalid`);
+      }
+      seen.add(member);
+      return Object.freeze({ member, amountYocto });
+    });
+
+    return Object.freeze(plan);
+  }
+
+  async getPublicDistributionIndex() {
+    const value = await this.view('get_public_distribution_index');
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new Error('get_public_distribution_index returned an invalid index');
+    }
+    return value;
+  }
+
+  async isPublicDistributionPending() {
+    return this.#booleanView('is_public_distribution_pending');
+  }
+
+  async isPublicDistributionComplete() {
+    return this.#booleanView('is_public_distribution_complete');
+  }
   async #booleanView(methodName) {
     const value = await this.view(methodName);
     if (typeof value !== 'boolean') throw new Error(`${methodName} returned a non-boolean value`);

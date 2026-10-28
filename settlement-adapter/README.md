@@ -119,3 +119,18 @@ Tests mock the request/response and contract client. They verify authorization g
 This module is **not a running server and does not integrate real authentication or an authoritative database**. Its callbacks must be connected to the application's actual session verifier and trusted membership records before mounting. For already framework-parsed bodies, this handler applies a serialized-size check, but the production framework must also enforce a raw request-body limit before parsing. Add rate limiting, secure server-side diagnostics, and endpoint-level integration tests as part of server integration.
 
 The member quote handler tests use local request/response doubles and mocked quote-client/context callbacks. They do not prove live 1Click credentials, live RPC, real authentication, or real-funds behavior. Run the complete Node suite with `node --test settlement-adapter\\*.test.mjs` and the Rust suites separately; never treat quote creation or swap delivery as a confirmed native-NEAR contract contribution.
+
+## Read-only payout agent readiness endpoint (testnet)
+
+payout-agent-readiness.mjs evaluates current payout prerequisites from finalized contract views. It checks the full configured schedule, member list and payout order, current recipient, contribution count, deadline, payout lifecycle flags, treasurer, and protection reserve. It never signs or submits a transaction.
+
+payout-readiness-handler.mjs exposes this as authenticated POST /api/agent/payout-readiness through the local testnet server. The request accepts only a circleId field; the caller active membership, persisted verified contract binding, approved code hash, and local/on-chain schedule parity are checked server-side. Results are no-store and explicitly state that no transaction was submitted. The web interface includes a corresponding Check payout readiness form.
+
+This endpoint is readiness monitoring only. The web interface also offers an explicit **Prepare payout plan (no transaction)** action. It calls authenticated `POST /api/agent/payout-plan` with `{ action: "prepare", circleId }`. The server repeats fresh finalized contract verification, approved code hash, active membership, and schedule parity checks before it can create a durable `PREPARED` record. If the contract reports `waiting` or `blocked`, no plan is written. Plan preparation does not authorize a payout, sign, submit, or move funds. Payout signing and execution remain separate until a least-privilege authorization model, explicit execution consent, idempotent submission tracking, and finalized transaction recovery are designed and reviewed. Do not store a full-access key in the browser or automatically retry an uncertain payout submission.
+
+Tests: `node --test settlement-adapter\\payout-agent-readiness.test.mjs settlement-adapter\\payout-readiness-handler.test.mjs settlement-adapter\\payout-execution-handler.test.mjs settlement-adapter\\ajo-testnet-app-server.test.mjs`.
+
+
+## Payout execution safeguards (ledger only)
+
+`payout-execution-store.mjs` is a durable, testnet-only payout state ledger with a unique contract/round idempotency key, separate second-operator authorization, explicit transaction-status transitions, and a stop-on-uncertain-submission rule. The authenticated `payout-execution-handler.mjs` is mounted at `POST /api/agent/payout-plan` for plan preparation, recording second-operator authorization, and reading ledger status. Neither the handler nor store contains a signer or transaction submitter; recording authorization does not move funds. See `PAYOUT_EXECUTION_SAFETY.md` for state meanings and trust boundaries. Tests: `node --test settlement-adapter/payout-execution-store.test.mjs`.

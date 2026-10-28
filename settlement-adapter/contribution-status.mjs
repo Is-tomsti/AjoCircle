@@ -9,10 +9,11 @@ export async function getMemberContributionStatus({ store, contractClient, inten
   const intent = store.getIntent(intentId.trim());
   if (!intent) throw new Error('Stored contribution intent was not found');
   if (typeof intent.requiredContributionAmount !== 'string') throw new Error('Stored intent has no trusted native-NEAR contribution amount');
+  if (typeof intent.recipient !== 'string' || !intent.recipient.trim()) throw new Error('Stored intent has no trusted member NEAR account');
 
   const [round, contribution, circleCompleted, payoutPending, payoutComplete] = await Promise.all([
     contractClient.getRound(),
-    contractClient.getContribution({ member: intent.memberId }),
+    contractClient.getContribution({ member: intent.recipient }),
     contractClient.isCircleCompleted(),
     contractClient.isPayoutPending(),
     contractClient.isPayoutComplete(),
@@ -39,5 +40,5 @@ export async function getMemberContributionStatus({ store, contractClient, inten
   else if (swapStatus === 'SWAP_DELIVERED') nextAction = 'UNWRAP_AND_SUBMIT_NATIVE_NEAR_CONTRIBUTION';
   else nextAction = 'WAIT_FOR_SWAP_SETTLEMENT';
 
-  return Object.freeze({ intentId: intent.intentId, circleId: intent.circleId, memberId: intent.memberId, intentRound: intent.round, contractRound: round, swapStatus, contractStatus, contributionAmount, requiredContributionAmount: intent.requiredContributionAmount, payoutPending, payoutComplete, circleCompleted, nextAction });
+  return Object.freeze({ intentId: intent.intentId, circleId: intent.circleId, memberId: intent.memberId, memberNearAccount: intent.recipient, intentRound: intent.round, contractRound: round, swapStatus, contractStatus, contributionAmount, requiredContributionAmount: intent.requiredContributionAmount, payoutPending, payoutComplete, circleCompleted, nextAction });
 }
