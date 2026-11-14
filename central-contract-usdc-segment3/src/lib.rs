@@ -544,6 +544,7 @@ pub struct CircleCleanupStateSummary {
 
 #[derive(Serialize, schemars::JsonSchema)]
 pub struct MissedContributionRefundClaimSummary {
+    #[schemars(with = "String")]
     pub member: AccountId,
     #[schemars(with = "String")]
     pub amount_usdc_base_units: U128,
