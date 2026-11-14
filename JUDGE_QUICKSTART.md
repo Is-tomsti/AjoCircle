@@ -1,49 +1,56 @@
 # AjoCircle — Judge Quickstart
 
-AjoCircle is a NEAR smart-contract prototype for rotating Ajo/Esusu savings circles. It encodes fixed membership, contribution amounts, payout order, treasurer-gated payouts, and guarded protection-reserve logic. It is an unaudited testnet prototype, not a product for real funds.
+AjoCircle is a USDC-denominated Ajo/Esusu savings-circle prototype built on NEAR Testnet. USDC is the member savings asset. NEAR is used by the network for execution and gas, and the intended member experience is sponsored transactions so eligible members do not need to acquire NEAR for gas.
 
-## Reproduce the checks
+## Current Testnet contract
 
-Run from a Windows PowerShell terminal in the repository root. These commands run tests/builds only; they do not deploy or submit transactions.
+- Contract: `ajocirclevault1.testnet`
+- Platform sponsor / contract owner: `ajocirclepot1.testnet`
+- USDC token: `3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af`
+- Token decimals: 6
+- Entry fee: 0.25 USDC once per member per circle
+- Distribution fee: 50 bps (0.5%) on eligible successful gross USDC distributions
+- Code-only contract upgrade (12 November 2026): [finalized Testnet transaction](https://explorer.testnet.near.org/transactions/7xqQUV7BgtoJhf2HFrRSkyPwjC3EawQWXmhKXvFdgN6B)
+
+The deployed Wasm was independently re-read from finalized Testnet state and matched the release SHA-256 recorded in `central-contract-usdc-segment3/SEGMENT3_TESTNET_DEPLOYMENT_RECORD_2026-11-12.md`.
+
+## Reproduce contract checks
+
+Run from the repository root in PowerShell:
 
 ```powershell
-node --test settlement-adapter\*.test.mjs
-cargo test --manifest-path contract\Cargo.toml
-cargo test --manifest-path settlement-adapter\Cargo.toml
+cargo fmt --manifest-path central-contract-usdc-segment3\Cargo.toml -- --check
+cargo test --locked --manifest-path central-contract-usdc-segment3\Cargo.toml
+cargo clippy --locked --manifest-path central-contract-usdc-segment3\Cargo.toml --all-targets -- -D warnings
+```
+
+For the frontend:
+
+```powershell
 Push-Location web
 npm ci
 npm run build
 Pop-Location
-git diff --check
 ```
 
-Expected result: all JavaScript/Node tests pass, both Rust test suites pass, and Vite produces a production bundle under `web/dist/`.
+For the Node settlement-adapter tests:
 
-## See the testnet payout evidence
+```powershell
+node --test settlement-adapter\*.test.mjs
+```
 
-The project has recorded successful testnet payout/distribution evidence. These are historical experiments on separate testnet contracts/circles, not the current `ajo-demo-oct24.testnet` circle and not proof of production readiness.
+The recorded post-deployment Segment 3 Rust validation was 88 passed, 0 failed and 2 ignored. The recorded relay/wallet tests were 34/34, and the combined Segment 3 app-server/relay suite was 66/66 at its checkpoint. These are automated local tests, not proof of a live member transaction or an independent audit. The full frontend test sweep had outstanding unrelated failures at the last recorded UI checkpoint; the CI frontend job therefore performs the production build, not a claim that all browser tests pass.
 
-- [Round 2 payout transaction — 3 NEAR to `ajotest3.testnet`](https://explorer.testnet.near.org/transactions/HSCMVxa7ZcSSYsGaoA9rAcxWCSMD23uHVqbRycoctHT3). See [TESTNET_PAYOUT_EVIDENCE_2026-10-25.md](TESTNET_PAYOUT_EVIDENCE_2026-10-25.md) for the recorded completion/finality context.
-- [Public distribution start](https://explorer.testnet.near.org/transactions/qAoza8KxUHy2uemQvJkNqvrfYdKHnW6nLfnzVqPcP7H), [continue distribution](https://explorer.testnet.near.org/transactions/4EkABcihByqDnigFu5z9DTsWscimE3CZC2ac342yqmkh), and [final continuation](https://explorer.testnet.near.org/transactions/C8K8WLYDFVbMZicCZESnnnzDzxiSuCRkDTmb5WpoRk9C). See [TESTNET_PUBLIC_DISTRIBUTION_EVIDENCE_2026-10-26.md](TESTNET_PUBLIC_DISTRIBUTION_EVIDENCE_2026-10-26.md); its source is the recorded application status result, not a newly fetched explorer reconciliation.
+## Authentication and gas sponsorship
 
-Do not resubmit those completed plans.
+New users can sign in through the NEAR FastAuth Testnet Google/email flow and derive an embedded Testnet identity. Existing NEAR wallet connection is supported where the relevant wallet/action path is available. Identity switching is isolated; wallet identities are not automatically merged by email.
 
-## Try the web prototype
+The intended sponsored flow is: member explicitly authorizes the action, then the platform relay submits the delegated action and pays eligible NEAR network gas. **The relayer and frontend release gates were disabled at the latest recorded acceptance checkpoint.** A real-wallet end-to-end zero-member-NEAR acceptance journey had not yet passed. Do not describe gas sponsorship as activated in the public demo until that gate is cleared and new evidence is recorded.
 
-1. In one terminal, follow [web/README.md](web/README.md) to start the combined API with a fresh server-only `AJO_SESSION_SECRET` and NEAR testnet RPC.
-2. In another terminal, run `Push-Location web; npm ci; npm run dev; Pop-Location`.
-3. Open `http://127.0.0.1:5173/` and connect a wallet that supports NEP-413 message signing on testnet.
-4. The UI must authenticate through a fresh server challenge. A quote preview is estimate-only; the currently configured local development provider is an explicitly synthetic offline mock. A real market preview requires a separately prepared mainnet context; it is not linked to this testnet circle.
-5. Contract and payout actions, where enabled, are testnet-only and require wallet/server confirmation. Never treat a quote or swap delivery as proof of a contract contribution.
+## Demo and safety boundary
 
-A clean clone does not contain the developer machine's local SQLite memberships/session state. Do not manufacture member, wallet-verification, quote, or contribution records to make the UI appear ready; trusted server-side setup and real wallet verification are required. Automated tests are reproducible from the source; wallet interoperability still requires live testing with compatible testnet wallets.
-
-## What is implemented versus planned
-
-Implemented/tested: Rust contract logic and invariants; protected-public reserve accounting; guarded payout execution/plans; NEP-413 authentication components; trusted membership/context storage; schedule-parity gates; testnet lifecycle/evidence checks; estimate-only quote-preview interfaces and offline tests.
-
-Not complete: an independent security audit; a production deployment; a production AI treasury agent; a full production-ready cross-chain contribution flow; persistent on-chain reputation history and end-user reputation product. The live 1Click integration has been exercised only through isolated `dry: true` previews and must not be described as a completed contribution flow. The contract requires native NEAR contributions, while the quote preview destination is wrapped NEAR.
-
-## Submission notes
-
-The official NEAR HACKATHON site currently lists submissions from **1 November 2026 00:00 UTC** through **14 November 2026 23:59 UTC**. Required links are a public repository and a public X demo post with video/screenshots; the post must say the project was built at NEAR HACKATHON. Re-read the official [HACKATHON.md](https://nearhackathon.com/HACKATHON.md) before submitting. Because substantial AjoCircle work predates the official build window, confirm the organizers' interpretation and ensure any hackathon claim accurately identifies work done during the event; do not imply that earlier work all occurred in the event period.
+- Demonstrate only UI states and Testnet evidence that you can reproduce at recording time.
+- A code deployment is not evidence of a member contribution, entry-fee payment, payout or refund.
+- Do not fabricate circles, memberships, wallet signatures, payment receipts or transaction hashes.
+- Testnet only. No real funds, Mainnet transaction, payout activation or relayer activation is authorized by these instructions.
+- The contract and application have not received an independent security audit. Do not describe them as production-ready.
