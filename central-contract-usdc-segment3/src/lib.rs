@@ -2356,9 +2356,7 @@ impl CentralCircleContract {
             .missed_contributions
             .get(&(circle_id, round_index, member.clone()))
             .is_some();
-        let private_cure_deadline_ns = deadline_ns
-            .checked_add(PUBLIC_DEFAULT_VOTE_WINDOW_NS)
-            .unwrap_or(u64::MAX);
+        let private_cure_deadline_ns = deadline_ns.saturating_add(PUBLIC_DEFAULT_VOTE_WINDOW_NS);
         let late_private_cure = circle.mode == CircleMode::Private
             && round_status == RoundStatus::DeadlinePassed
             && missed_scan_complete
@@ -4771,7 +4769,7 @@ impl CentralCircleContract {
             let current_round = circle.rounds.get(circle.current_round as usize);
             let deadline_ns = current_round.map(|round| U64(round.deadline_ns));
             let cancellation_available_at_ns = current_round.map(|round| {
-                U64(round.deadline_ns.checked_add(PUBLIC_DEFAULT_VOTE_WINDOW_NS).unwrap_or(u64::MAX))
+                U64(round.deadline_ns.saturating_add(PUBLIC_DEFAULT_VOTE_WINDOW_NS))
             });
             let missed_scan_complete = current_round
                 .map(|round| round.missed_scan_complete)
@@ -5865,9 +5863,7 @@ impl CentralCircleContract {
             return false;
         };
         let available_at = round
-            .deadline_ns
-            .checked_add(PUBLIC_DEFAULT_VOTE_WINDOW_NS)
-            .unwrap_or(u64::MAX);
+            .deadline_ns.saturating_add(PUBLIC_DEFAULT_VOTE_WINDOW_NS);
         now >= available_at
             && round.status == RoundStatus::DeadlinePassed
             && round.missed_scan_complete
