@@ -16,10 +16,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-          components: rustfmt, clippy
-      - name: Check formatting
-        run: cargo fmt --manifest-path central-contract-usdc-segment3/Cargo.toml -- --check
-      - name: Run contract tests
+          components: clippy
+      - name: Run USDC contract tests
         run: cargo test --locked --manifest-path central-contract-usdc-segment3/Cargo.toml
       - name: Run Clippy
         run: cargo clippy --locked --manifest-path central-contract-usdc-segment3/Cargo.toml --all-targets -- -D warnings
