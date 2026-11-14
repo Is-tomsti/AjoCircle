@@ -1,0 +1,17 @@
+[package]
+name = "ajocircle-central-usdc"
+version = "0.1.0"
+edition = "2021"
+description = "AjoCircle central multi-circle NEAR contract prototype"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = { version = "=5.17.2", default-features = false, features = ["legacy"] }
+borsh = { version = "1.5.1", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+schemars = { version = "=0.8.22", features = ["derive"] }
+
+[dev-dependencies]
+near-sdk = { version = "=5.17.2", default-features = false, features = ["legacy", "unit-testing"] }
