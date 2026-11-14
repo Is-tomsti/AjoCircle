@@ -1,6 +1,3 @@
-#[cfg(test)]
-mod protection;
-
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LookupMap;
 use near_sdk::json_types::{U128, U64};
