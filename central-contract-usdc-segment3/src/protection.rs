@@ -998,3 +998,6 @@ mod tests {
             calculate_member_settlement(1_000_000, 100_000, 200_000, true, true).unwrap();
         assert_eq!(settlement.penalty_yocto, 10_000);
         assert_eq!(settlement.distribution_fee_yocto, 5_000);
+        assert_eq!(settlement.transfer_yocto, 1_085_000);
+    }
+}
