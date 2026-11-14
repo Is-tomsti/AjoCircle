@@ -1,41 +1,32 @@
 # AjoCircle Demo Runbook
 
-Use this runbook to prepare a truthful 60–90 second hackathon demo. Record the actual running app and actual testnet evidence. Do not fabricate a quote, transaction, membership, verification, or on-chain result.
+Use this runbook to record a truthful demonstration of the current USDC-denominated AjoCircle Testnet prototype. Capture the running application and genuine evidence. Never create fake memberships, payment receipts, balances or transaction results to make a demo look complete.
 
-## Recording checklist
+## Product being demonstrated
 
-- Use the existing project and existing testnet contracts; do not redeploy just to make the footage look cleaner.
-- Close terminals that might expose environment variables, session tokens, local database paths, account secrets, or wallet private-key material.
-- Use NEAR testnet only. Do not open a transaction confirmation dialog unless you are deliberately doing an authorized testnet action and understand the exact call, account, amount, and recipient.
-- Keep the user interface and browser address bar legible. Do not edit the recording to imply that a historical transaction belongs to the current Oct24 circle.
-- If the quote preview is shown, the screen must visibly say the offline estimate is synthetic and not a market price. It targets wrapped NEAR and is not proof of a contract contribution.
+AjoCircle supports Ajo/Esusu savings circles with USDC-denominated member accounting on NEAR Testnet. Users can authenticate through Google/email using NEAR FastAuth or connect an existing NEAR wallet where the wallet/action path is supported. The one-time entry fee is 0.25 USDC per member per circle. The platform's eligible distribution fee is 0.5% and is accrued only after a successful USDC distribution transfer.
 
-## Suggested 75-second sequence
+The intended member gas experience is sponsored: the member authorizes an eligible action and AjoCircle's relay pays the NEAR gas. **The backend relay and frontend release flag remained disabled at the latest verified checkpoint, and a real-wallet zero-member-NEAR journey had not passed end-to-end acceptance.** Say this clearly; do not stage or imply an activated gasless flow.
 
-| Time | Capture | Narration | What it demonstrates |
-| --- | --- | --- | --- |
-| 0–10s | AjoCircle landing/member UI | “AjoCircle brings Ajo/Esusu savings-circle rules into a NEAR smart contract.” | Product and target users |
-| 10–25s | Source README or test run showing contract/adapter suites | “Membership, fixed contributions, payout order, treasurer permissions, and protection rules are covered by automated tests.” | Reproducible engineering, not a claim of audit |
-| 25–45s | Open the historical 3 NEAR testnet payout transaction in the explorer | “This separate earlier testnet demo recorded a finalized 3 NEAR payout and completed-circle state.” | External testnet evidence; name the historical contract `ajo-demo-fresh.testnet` |
-| 45–58s | Open public-distribution evidence/transaction links | “A separate testnet distribution plan reports 3 NEAR each to three recipients; the evidence note explains its source.” | Distribution prototype; do not imply independent explorer verification beyond what the note supports |
-| 58–70s | Member quote-preview form/result, if signed into the local test environment | “The preview boundary is separate from contribution. Offline mode is synthetic; live 1Click previews are isolated from the testnet circle.” | Scope honesty and fail-closed behavior |
-| 70–75s | End card / README quickstart | “AjoCircle is testnet-only and unaudited; broader cross-chain settlement and AI treasury remain future work.” | Honest state and next steps |
+## Suggested recording sequence
 
-## Evidence URLs
+1. Show the AjoCircle landing and explain that savings and contributions are denominated in USDC.
+2. Demonstrate the available authentication choices: Google/email FastAuth Testnet and existing NEAR wallet, only where actually working in the current build.
+3. Show Discover/public circle information and explain that users review circle rules, schedules and fees before joining.
+4. Explain the separation between joining and the one-time 0.25 USDC entry-fee payment. Only show a payment as completed when the deployed contract and finalized Testnet evidence confirm it.
+5. Show the deployed USDC Testnet contract and its finalized code-upgrade transaction: https://explorer.testnet.near.org/transactions/7xqQUV7BgtoJhf2HFrRSkyPwjC3EawQWXmhKXvFdgN6B
+6. Clearly distinguish contract deployment and automated tests from a live member contribution or payout. At the latest recorded read-only check, no active circle summaries or USDC liabilities were present.
+7. Close with the current release boundaries: Testnet only, relay activation still gated, no real funds, unaudited prototype.
 
-- Historical 3 NEAR payout: https://explorer.testnet.near.org/transactions/HSCMVxa7ZcSSYsGaoA9rAcxWCSMD23uHVqbRycoctHT3
-- Public distribution start: https://explorer.testnet.near.org/transactions/qAoza8KxUHy2uemQvJkNqvrfYdKHnW6nLfnzVqPcP7H
-- Public distribution continuation: https://explorer.testnet.near.org/transactions/4EkABcihByqDnigFu5z9DTsWscimE3CZC2ac342yqmkh
-- Public distribution final continuation: https://explorer.testnet.near.org/transactions/C8K8WLYDFVbMZicCZESnnnzDzxiSuCRkDTmb5WpoRk9C
+## Recording safeguards
 
-These are separate historic testnet circles/plans, not the active Oct24 circle. Read the linked evidence files for provenance and don't resubmit the completed plans.
+- Use Testnet only. Do not use a Mainnet wallet, token, RPC or credential.
+- Never expose passwords, seed phrases, private keys, session tokens, provider credentials, database paths or environment-variable values.
+- Do not sign or submit a wallet action just for the recording.
+- Do not claim that a quote, prepared action, mock response or code deployment is a settled USDC contribution.
+- Label synthetic/local test data as synthetic/local test data.
+- Preserve the distinction between implemented, tested, deployed and activated capabilities.
 
-## X post template — do not publish until the event-period work and demo are real
+## Public demo-post wording
 
-> Built at NEAR HACKATHON: AjoCircle is a NEAR-based Ajo/Esusu savings-circle prototype for transparent contributions and controlled payouts. During the hackathon we [describe the specific work actually completed during the official build window]. The contract enforces fixed contribution amounts and payout-order/treasurer rules; our testnet demo includes [linkable evidence you actually show]. Testnet only, unaudited, and no real funds. Cross-chain contribution settlement and AI treasury automation are not yet complete.
-
-Attach the actual demo video or screenshots. Replace every bracketed part with a fact visible in the recording. Do not publish the post until the required project work has actually been done during the official hackathon period; substantial AjoCircle development predates 1 November 2026, so confirm eligibility/wording if uncertain. The owner must publish the post themselves and then provide the public URL.
-
-## Hard boundaries
-
-Do not claim production readiness, independent audit, autonomous AI treasury, a complete cross-chain contribution, or mainnet custody. A successful swap/quote is not a contribution. Only contract-authoritative state and verified finalized native-NEAR contribution evidence count as contributions.
+Use accurate wording that describes the work actually completed during the hackathon. Do not claim that all prior development happened during the event. Attach the real video or screenshots from the recording, and do not claim a completed sponsored-gas journey or live USDC payout unless it is demonstrated by fresh, verifiable Testnet evidence.
